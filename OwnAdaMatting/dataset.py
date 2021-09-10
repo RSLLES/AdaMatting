@@ -42,7 +42,12 @@ class AdaMattingDataset:
         return img
 
     def gen_trimap(self, alpha):
-        alpha_exp = tf.expand_dims(alpha, axis=0)
+        have_batch = (len(alpha.shape) == 4)
+        if have_batch:
+            alpha_exp = alpha
+        else:
+            alpha_exp = tf.expand_dims(alpha, axis=0)
+
         kernel_size_d = tf.random.uniform(shape=[2], minval=0, maxval=50, dtype=tf.int64)
         kernel_size_e = tf.random.uniform(shape=[2], minval=0, maxval=20, dtype=tf.int64)
 
@@ -54,7 +59,11 @@ class AdaMattingDataset:
             tf.cast((dilated > 0) & (eroded < 1), dtype=tf.float32),
             tf.cast(eroded >= 1, dtype=tf.float32)
         ], axis=-1)
-        return tf.squeeze(trimap, axis=0)
+
+        if have_batch:
+            return trimap
+        else:
+            return tf.squeeze(trimap, axis=0)
 
     def extract_trimap(self, alpha):
         return tf.concat([
@@ -120,5 +129,5 @@ class AdaMattingDataset:
 
 
 # Tests
-df = AdaMattingDataset("train", "/net/rnd/DEV/Datasets_DL/alpha_matting/")
-df.show(next(iter(df._dataset)))
+# df = AdaMattingDataset("train", "/net/rnd/DEV/Datasets_DL/alpha_matting/")
+# df.show(next(iter(df._dataset)))
