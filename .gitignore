@@ -1,2 +1,5 @@
 .vscode/
 machineLearningEnv/
+AdaMatting/
+OwnAdaMatting/logs/
+OwnAdaMatting/__pycache__/
