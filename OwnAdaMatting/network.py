@@ -3,9 +3,8 @@ from tensorflow.keras import layers
 from tensorflow.keras import Model
 
 # Il y a 3 divisions : il faut donc que img size soit un multiple de 8
-def get_model(img_size):
-    inputs = [layers.Input(shape=img_size + (3,)), layers.Input(shape=img_size + (3,))]
-    depth = 32
+def get_model(img_size, depth=32):
+    inputs = layers.Input(shape=img_size + (6,))
 
     # Elements de base
     def ConvBNRelu(entry, dim, kernel=3, stride=1):
@@ -40,8 +39,7 @@ def get_model(img_size):
         return x
     
     # Encoder
-    l = layers.Concatenate(axis=-1)(inputs)
-    l = ConvBNRelu(l, depth)
+    l = ConvBNRelu(inputs, depth)
     l = layers.MaxPooling2D(pool_size=3, strides=1, padding="same")(l)
 
     l = res_block(l, depth)
