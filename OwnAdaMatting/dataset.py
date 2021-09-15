@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
+
 import tensorflow as tf
-from tensorflow.python.ops.gen_dataset_ops import TextLineDataset
-import tensorflow_addons as tfa
-import cv2
+
+from keras.utils.vis_utils import plot_model
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -16,12 +16,27 @@ class AdaMattingDataset:
         self._size = img_size
         self._dataset_folder = dataset_folder
         self._mode = mode
-        self._batch_size = batch_size
-
         self._root_folder = join(self._dataset_folder, self._mode)
 
+        self._test_and_val_period = 10
+
+        self._batch_size = batch_size
+        self._autotune = tf.data.experimental.AUTOTUNE
+
         self._data_list_file = tf.data.TextLineDataset(join(self._root_folder, "data.csv"))
-        self._df = self._data_list_file.map(lambda x : self.preprocess(x), num_parallel_calls=5).shuffle(500).batch(batch_size).prefetch(1)
+        self._df = self._data_list_file.map(lambda x : self.preprocess(x), num_parallel_calls=self._autotune).shuffle(1500, reshuffle_each_iteration=False).batch(batch_size).prefetch(self._autotune)
+
+        def is_test(x, y):
+            return x % self._test_and_val_period == 0
+        def is_val(x, y):
+            return x % self._test_and_val_period == 1
+        def is_train(x, y):
+            return x % self._test_and_val_period >= 2
+
+        recover = lambda x,y: y
+
+        self._df_train = self._df.enumerate().filter(is_train).map(recover)
+        self._df_test =  self._df.enumerate().filter(is_test).map(recover)
 
     def preprocess(self, line):
         def open_img(root_path, file):
