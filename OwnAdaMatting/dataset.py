@@ -6,39 +6,39 @@ import tensorflow as tf
 from keras.utils.vis_utils import plot_model
 
 import matplotlib
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 from os.path import join
 
 class AdaMattingDataset:
-    def __init__(self, mode, dataset_folder, batch_size=32, img_size = (1024, 1024), n_val=5, shuffle_buffer = 15000) -> None:
+    def __init__(self, mode, dataset_folder, batch_size=32, img_size = (1024, 1024), shuffle_buffer = 15000) -> None:
         self._size = img_size
         self._dataset_folder = dataset_folder
         self._mode = mode
         self._root_folder = join(self._dataset_folder, self._mode)
-        self._n_val = n_val
 
-        self._test_period = 10
+        self._n_test = 100
+        self._n_val = 5
 
         self._batch_size = batch_size
         self._autotune = tf.data.experimental.AUTOTUNE
 
+        #  Initial load and shuffle
         self._data_list_file = tf.data.TextLineDataset(join(self._root_folder, "data.csv")).shuffle(shuffle_buffer, reshuffle_each_iteration=False)
-        self._df = self._data_list_file.map(lambda x : self.preprocess(x), num_parallel_calls=self._autotune).batch(batch_size).prefetch(self._autotune)
 
-        def is_val(x, y):
-            return x == 0
-        def is_test(x, y):
-            return not is_val(x,y) and x % self._test_period == 0
-        def is_train(x, y):
-            return not is_val(x,y) and not is_test(x,y)
+        #  Split
+        self._df_test = self._data_list_file.take(self._n_test + self._n_val)
+        self._df_train = self._data_list_file.skip(self._n_test + self._n_val)
 
-        recover = lambda x,y: y
+        self._df_val = self._df_test.take(self._n_val)
+        self._df_test = self._df_test.skip(self._n_val)
 
-        self._df_train = self._df.enumerate().filter(is_train).map(recover)
-        self._df_test =  self._df.enumerate().filter(is_test).map(recover)
-        self._df_val =  self._df.enumerate().filter(is_val).map(recover)
+        # Preprocess
+        self._df_train = self._df_train.map(lambda x : self.preprocess(x), num_parallel_calls=self._autotune).batch(batch_size).prefetch(self._autotune)
+        self._df_test = self._df_test.map(lambda x : self.preprocess(x), num_parallel_calls=self._autotune).batch(batch_size).prefetch(self._autotune)
+        self._df_val = self._df_val.map(lambda x : self.preprocess(x), num_parallel_calls=self._autotune).batch(1).prefetch(self._autotune)
+
 
     def preprocess(self, line):
         def open_img(root_path, file):

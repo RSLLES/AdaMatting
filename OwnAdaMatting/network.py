@@ -1,7 +1,135 @@
 import tensorflow as tf
-from keras.layers import Input, Conv2D, BatchNormalization, Lambda, MaxPooling2D, Add, Concatenate
+from keras.layers import Input, Conv2D, BatchNormalization, Lambda, MaxPooling2D, Add, Concatenate, Layer
 from keras.layers.advanced_activations import LeakyReLU, Softmax
 from keras import Model, Sequential
+
+#####################
+### CUSTOM LAYERS ###
+#####################
+
+class ConvBNRelu (Layer):
+    def __init__(self, depth=None, kernel=3, stride=1, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        self.depth = depth
+        self.kernel = kernel
+        self.stride = stride
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        return {
+            **base_config,
+            "depth" : self.depth,
+            "kernel" : self.kernel,
+            "stride" : self.stride}
+
+    def build(self, input_shape):
+        self.depth = input_shape[-1] if self.depth == None else self.depth
+        self.internal = [
+            Conv2D(self.depth, self.kernel, strides=self.stride, padding="same"),
+            BatchNormalization(),
+            LeakyReLU()
+        ]
+
+    def call(self, inputs, *args, **kwargs):
+        z = inputs
+        for layer in self.internal:
+            z = layer(z)
+        return z
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], input_shape[2], self.depth)
+
+class ResBlock (Layer):
+    def __init__(self, downsample=False, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        self.downsample = downsample
+        self.stride = 2 if downsample else 1
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        return {
+            **base_config,
+            "downsample" : self.downsample,
+            "stride" : self.stride}
+
+    def build(self, input_shape):
+        self.depth = input_shape[-1]*2 if self.downsample else None
+        
+        self.conv1 = ConvBNRelu(depth=self.depth, kernel=3, stride=self.stride)
+        self.conv2 = ConvBNRelu(depth=None, kernel=3, stride=1)
+        self.convcut = ConvBNRelu(depth=self.depth, kernel=1, stride=self.stride)
+        self.add = Add()
+        self.relu = LeakyReLU()
+        if self.downsample:
+            self.maxpool = MaxPooling2D(pool_size=3, strides=1, padding="same")
+        
+    def call(self, inputs, *args, **kwargs):
+        z1 = self.conv1(self.conv2(inputs))
+        z2 = self.convcut(inputs)
+        z = self.add([z1, z2])
+        if self.downsample:
+            z = self.maxpool(z)
+        return z
+
+class DecoderBlock (Layer):
+    def __init__(self, kernel=3, double_reduction=False, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        self.double_reduction = double_reduction
+        self.kernel = kernel
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        return {
+            **base_config,
+            "double_reduction" : self.double_reduction,
+            "kernel" : self.kernel}
+
+    def build(self, input_shape):
+        self.internal = [
+            ConvBNRelu(kernel=self.kernel, stride=1),
+            SubPixelConv(double_reduction=self.double_reduction)
+        ]
+
+    def call(self, inputs, *args, **kwargs):
+        z = inputs
+        for layer in self.internal:
+            z = layer(z)
+        return z
+
+class SubPixelConv (Layer):
+    def __init__(self, double_reduction=False, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        self.double_reduction = double_reduction
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        return {
+            **base_config,
+            "double_reduction" : self.double_reduction}
+
+    def build(self, input_shape):
+        self.depth = 2*input_shape[-1] if not self.double_reduction else input_shape[-1]
+        self.internal = [
+            Conv2D(self.depth, kernel_size=1, strides=1, padding="same"),
+            Lambda(
+                lambda tnsr : tf.nn.depth_to_space(tnsr, block_size=2),
+                output_shape = lambda input_shape : self.compute_output_shape(input_shape),
+            )
+        ]
+
+    def call(self, inputs, *args, **kwargs):
+        z = inputs
+        for layer in self.internal:
+            z = layer(z)
+        return z
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1]*2, input_shape[2]*2, int(self.depth/4))
+
+
+########################
+### MODEL GENERATION ###
+########################
 
 # Il y a 3 divisions : il faut donc que img size soit un multiple de 8
 def get_model(img_size, depth=32):
@@ -10,113 +138,66 @@ def get_model(img_size, depth=32):
     ### Entree ###
     ##############
     inputs = Input(shape = img_size + (6,), name="input")
-    
-    ########################
-    ### Elements de base ###
-    ########################
-
-    # Chaque brique retourne :
-    # - son model
-    # - sa taille de sortie
-
-    def ConvBNRelu_withDepth(shape, depth, kernel=3, stride=1, id=""):
-        return Sequential(
-            [
-                Input(shape = shape),
-                Conv2D(depth, kernel, strides=stride, padding="same"),
-                BatchNormalization(),
-                LeakyReLU()
-            ],
-            name= f"convbnrelu{id}"
-        )
-
-    def ConvBNRelu(shape, kernel=3, stride=1, prefix="", id=""):
-        return ConvBNRelu_withDepth(shape=shape, depth=shape[-1], kernel=kernel, stride=stride, id=id)
-
-
-    def SubPixelConv(shape, id="", double_reduction=False):
-        depth = 2*shape[-1] if not double_reduction else shape[-1]
-        return Sequential(
-            [
-                Input(shape = shape),
-                Conv2D(depth, 3, strides=1, padding="same"),
-                Lambda(
-                    lambda tnsr : tf.nn.depth_to_space(tnsr, block_size=2),
-                    output_shape = lambda input_shape : (input_shape[0], input_shape[1]*2, input_shape[2]*2, int(depth/4)),
-                )
-            ],
-            name=f"subpixelconv{id}"
-        )
-
-    
-    def ResBlock(shape, downsample=False, prefix="", id=""):
-        downstride = 2 if downsample else 1
-        depth = shape[-1]*downstride
-
-        entry = Input(shape = shape)
-        
-        x = ConvBNRelu_withDepth(shape, depth=depth, stride=downstride, id="1")(entry)
-        x = ConvBNRelu(x.shape[1:], id="2")(x)
-        
-        cut = Conv2D(filters=depth, kernel_size=1, strides=downstride, padding="same", name="cut")(entry)
-
-        x = Add()([x, cut])
-        x = LeakyReLU()(x)
-        if downsample:
-            x = MaxPooling2D(pool_size=3, strides=1, padding="same")(x)
-
-        return  Model(inputs = entry, outputs = x, name = f"resnetdown{id}" if downsample else f"resnet{id}")
-
-    def Concats(id=""):
-        return Concatenate(axis=-1, name=f"concat{id}")
-    
+     
     
     ###############
     ### Encoder ###
     ###############
     l = inputs
 
-    l = ConvBNRelu_withDepth(shape=l.shape[1:], depth=depth, kernel=3, id="encoder1")(l)
-    l = MaxPooling2D(pool_size=3, strides=2, padding="same", name="maxpoolencoder1")(l)
+    l = ConvBNRelu(depth=depth, kernel=3, stride=1, name="")(l)
+    l = ConvBNRelu(depth=depth*2, kernel=3, stride=1, name="")(l)
+    l = MaxPooling2D(pool_size=3, strides=2, padding="same", name="")(l)
 
-    l = ResBlock(shape=l.shape[1:], id="encoder2")(l)
+    l = ResBlock(downsample=False)(l)
     shallow_cut = l
-    l = ResBlock(shape=l.shape[1:], id="encoder2", downsample=True)(l)
+    l = ResBlock(downsample=True)(l)
 
-    l = ResBlock(shape=l.shape[1:], id="encoder3")(l)
+    l = ResBlock(downsample=False)(l)
     middle_cut = l
-    l = ResBlock(shape=l.shape[1:], id="encoder3", downsample=True)(l)
+    l = ResBlock(downsample=True)(l)
     
-    l = ResBlock(shape=l.shape[1:], id="encoder4")(l)
+    l = ResBlock(downsample=False)(l)
     deep_cut = l
-    l = ResBlock(shape=l.shape[1:], id="encoder4", downsample=True)(l)
+    end_encoder = ResBlock(downsample=True)(l)
 
 
-    ###############
-    ### Decoder ###
-    ###############
+    ######################
+    ### Decoder Trimap ###
+    ######################
 
-    def DecoderBlock(shape, kernel, id="", double_reduction=False):
-        inputs = Input(shape = shape)
-        l = inputs
-        l = ConvBNRelu(shape=l.shape[1:], kernel=kernel)(l)
-        l = SubPixelConv(shape=l.shape[1:], double_reduction=double_reduction)(l)
+    l = DecoderBlock(kernel=3, double_reduction=False)(end_encoder)
+    l = Concatenate()([l, deep_cut])
 
-        return Model(inputs=inputs, outputs=l, name=f"decoderblock{id}")
+    l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    l = Concatenate()([l, middle_cut])
 
-    l = DecoderBlock(shape=l.shape[1:], kernel=7, id="4")(l)
-    l = Concats(id="4")([l, deep_cut])
+    l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    # l = Concatenate()([l, shallow_cut])
 
-    l = DecoderBlock(shape=l.shape[1:], kernel=7, id="3", double_reduction=True)(l)
-    l = Concats(id="3")([l, middle_cut])
-
-    l = DecoderBlock(shape=l.shape[1:], kernel=7, id="2", double_reduction=True)(l)
-    l = Concats(id="2")([l, shallow_cut])
-
-    l = DecoderBlock(shape=l.shape[1:], kernel=7, id="1", double_reduction=False)(l)
+    l = DecoderBlock(kernel=3, double_reduction=False)(l)
 
     # Sortie
     l = Conv2D(3, kernel_size=3, padding="same", name="conv_out")(l)
-    adapted_trimap = Softmax(name="softmax_out")(l)
+    end_trimap_decoder = Softmax()(l)
 
-    return Model(inputs=inputs, outputs=adapted_trimap, name="trimap_decoder")
+    ######################
+    ### Decoder Trimap ###
+    ######################
+
+    # l = DecoderBlock(kernel=3, double_reduction=False)(end_encoder)
+    # l = Concatenate()([l, deep_cut])
+
+    # l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    # l = Concatenate()([l, middle_cut])
+
+    # l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    # # l = Concatenate()([l, shallow_cut])
+
+    # l = DecoderBlock(kernel=3, double_reduction=False)(l)
+
+    # # Sortie
+    # l = Conv2D(3, kernel_size=3, padding="same", name="conv_out")(l)
+    # end_alpha_decoder = Softmax()(l)
+
+    return Model(inputs=inputs, outputs=end_trimap_decoder, name="trimap_decoder")

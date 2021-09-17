@@ -1,10 +1,23 @@
 import matplotlib
 import io
 
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 import tensorflow as tf
+from keras.callbacks import keras_model_summary
+
+def generate_graph(tf_writer, model):
+    with tf_writer.as_default():
+      with tf.summary.record_if(True):
+        summary_writable = (
+            model._is_graph_network or  # pylint: disable=protected-access
+            model.__class__.__name__ == 'Sequential')  # pylint: disable=protected-access
+        if summary_writable:
+            keras_model_summary('keras', model, step=0)
+        else:
+            print("Can't write graph")
+
 
 # Stolen from tensorflow official guide:
 # https://www.tensorflow.org/tensorboard/image_summaries
@@ -29,20 +42,21 @@ def plot_to_image(figure):
     return image
 
 
-def image_grid(data, model, n=4):
+def image_grid(df, model, n):
     nb_categories = 4
 
-    x, y = data
     fig, axs = plt.subplots(n, nb_categories)
     scale_img = 3
     fig.set_size_inches(nb_categories*scale_img,n*scale_img) 
-    out = model.predict(x)
-
-    for row in range(n):
+    
+    for row, data in zip(range(n), df):
+        x, y = data
+        out = model.predict(x)
         for i, title, d in zip(
                                 range(nb_categories), 
                                 ["Patched Image", "User's trimap input", "Refined Trimap", "Ground Truth Trimap"],
-                                [x[row, :,:,0:3], x[row, :,:,3:6], out[row, :,:,:], y[row, :,:,:]]):
+                                [x[0, :,:,0:3], x[0, :,:,3:6], out[0, :,:,:], y[0, :,:,:]]
+                            ):
             axs[row, i].imshow(d)
             axs[row, i].axis("off")
             if row == 0:
