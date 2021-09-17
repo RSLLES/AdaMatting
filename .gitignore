@@ -2,4 +2,5 @@
 machineLearningEnv/
 AdaMatting/
 OwnAdaMatting/logs/
+OwnAdaMatting/saves/
 OwnAdaMatting/__pycache__/
