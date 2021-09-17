@@ -46,7 +46,7 @@ def image_grid(df, model, n):
     nb_categories = 4
 
     fig, axs = plt.subplots(n, nb_categories)
-    scale_img = 3
+    scale_img = 5
     fig.set_size_inches(nb_categories*scale_img,n*scale_img) 
     
     for row, data in zip(range(n), df):

@@ -1,5 +1,7 @@
 import tensorflow as tf
 from keras.layers import Input, Conv2D, BatchNormalization, Lambda, MaxPooling2D, Add, Concatenate, Layer
+from keras.layers.convolutional_recurrent import ConvLSTMCell
+
 from keras.layers.advanced_activations import LeakyReLU, Softmax
 from keras import Model, Sequential
 
@@ -126,6 +128,29 @@ class SubPixelConv (Layer):
     def compute_output_shape(self, input_shape):
         return (input_shape[0], input_shape[1]*2, input_shape[2]*2, int(self.depth/4))
 
+class PropagationUnit (Layer):
+    def __init__(self, depth=None, kernel=3, stride=1, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        return {
+            **base_config
+            }
+
+    def build(self, input_shape):
+        self.rs = ResBlock(downsample=False)
+        self.lstmconvcell = ConvLSTMCell(rank=2, filters=3, kernel_size=3, padding="same")
+
+        self.built = True
+
+    def call(self, inputs, states, *args, **kwargs):
+        z = inputs
+        for layer in self.internal:
+            z = layer(z)
+        return z
+
+
 
 ########################
 ### MODEL GENERATION ###
@@ -181,23 +206,30 @@ def get_model(img_size, depth=32):
     l = Conv2D(3, kernel_size=3, padding="same", name="conv_out")(l)
     end_trimap_decoder = Softmax()(l)
 
-    ######################
-    ### Decoder Trimap ###
-    ######################
 
-    # l = DecoderBlock(kernel=3, double_reduction=False)(end_encoder)
+    #####################
+    ### Decoder Alpha ###
+    #####################
+
+    l = DecoderBlock(kernel=3, double_reduction=False)(end_encoder)
     # l = Concatenate()([l, deep_cut])
 
-    # l = DecoderBlock(kernel=3, double_reduction=True)(l)
-    # l = Concatenate()([l, middle_cut])
+    l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    l = Concatenate()([l, middle_cut])
 
-    # l = DecoderBlock(kernel=3, double_reduction=True)(l)
-    # # l = Concatenate()([l, shallow_cut])
+    l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    l = Concatenate()([l, shallow_cut])
 
-    # l = DecoderBlock(kernel=3, double_reduction=False)(l)
+    l = DecoderBlock(kernel=3, double_reduction=False)(l)
 
-    # # Sortie
-    # l = Conv2D(3, kernel_size=3, padding="same", name="conv_out")(l)
-    # end_alpha_decoder = Softmax()(l)
+    # Sortie
+    l = Conv2D(3, kernel_size=3, padding="same", name="conv_out")(l)
+    end_alpha_decoder = Softmax()(l)
+
+
+    ########################
+    ### Propagation Unit ###
+    ########################
+
 
     return Model(inputs=inputs, outputs=end_trimap_decoder, name="trimap_decoder")
