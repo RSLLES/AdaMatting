@@ -15,7 +15,7 @@ from tensorflow.keras.optimizers import Adam
 
 from keras.utils.vis_utils import plot_model
 
-from network import get_model
+from network import get_model, MultiTaskLoss
 from dataset import AdaMattingDataset
 from utils import image_grid, plot_to_image, generate_graph
 
@@ -25,9 +25,9 @@ from utils import image_grid, plot_to_image, generate_graph
 #################
 
 img_size = (512, 512)
-batch_size = 12
+batch_size = 15
 N_EPOCHS = 150
-PERIOD_TEST = 60*60 # Temps en seconde entre chaque test
+PERIOD_TEST = 60*20 # Temps en seconde entre chaque test
 last_test = time()
 
 
@@ -41,23 +41,24 @@ while not succeed:
         print(date)
         log_dir = f'OwnAdaMatting/logs/{date}/'
         save_dir = f'OwnAdaMatting/saves/{date}/'
+        os.mkdir(save_dir)
         df = AdaMattingDataset("train", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         model = get_model(img_size=img_size, depth=16)
-        model.compile(
-            optimizer=Adam(learning_rate=0.0001),
-            loss=BinaryCrossentropy(),
-            metrics=["accuracy", "mse"]
-        )
+        loss_function = MultiTaskLoss()
+        opt = Adam(learning_rate=0.0001)
+        # model.compile(
+        #     optimizer=Adam(learning_rate=0.0001),
+        #     loss=MultiTaskLoss(),
+        # )
 
         ###################
         ### TENSORBOARD ###
         ###################
         train_writer = tf.summary.create_file_writer(join(log_dir, f"train/"))
         test_writer = tf.summary.create_file_writer(join(log_dir, f"test/"))
-        graph_writer = tf.summary.create_file_writer(join(log_dir, f"graph//"))
         
         # Graph
-        generate_graph(graph_writer, model)
+        generate_graph(test_writer, model)
 
         #####################
         ### TRAINING LOOP ###
@@ -65,33 +66,36 @@ while not succeed:
         i = 0
         img_index = 0
         for epoch in range(N_EPOCHS):
-            model.save(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"))
-            for x_batch, y_batch in tqdm(df._df_train, desc=f"epoch={epoch}"):
+            model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
+            progress_bar = tqdm(df._df_train, desc=f"epoch={epoch}")
+            progress_bar.set_postfix({"loss" : None})
+            for x_batch, y_batch in progress_bar:
                 # Training
-                loss, acc, mse = model.train_on_batch(x_batch, y_batch)
+                with tf.GradientTape() as tape:
+                    y_pred = model(x_batch, training=True)
+                    loss = loss_function(y_batch, y_pred)
+
+                gradients = tape.gradient(loss, model.trainable_weights)
+                opt.apply_gradients(zip(gradients, model.trainable_weights))
+                progress_bar.set_postfix({"loss" : str(loss.numpy())})
 
                 # Logging training data
                 with train_writer.as_default():
                     tf.summary.scalar("Loss", loss, step=i)
-                    tf.summary.scalar("Accuracy", acc, step=i)
-                    tf.summary.scalar("MSE", mse, step=i)
 
                 #  Logging testing and images
                 if time() - last_test > PERIOD_TEST:
                     last_test = time()
                     Loss, Acc, Mse = [],[],[]
                     for x_batch, y_batch in df._df_test:
-                        loss, acc, mse = model.test_on_batch(x_batch, y_batch)
+                        y_pred = model(x_batch, training=False)
+                        loss = loss_function(y_batch, y_pred)
                         Loss.append(loss)
-                        Acc.append(acc)
-                        Mse.append(mse)
 
                     mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 
                     with test_writer.as_default():
                         tf.summary.scalar("Loss", mean(Loss), step=i)
-                        tf.summary.scalar("Accuracy", mean(Acc), step=i)
-                        tf.summary.scalar("MSE", mean(Mse), step=i)
 
                         fig = image_grid(df._df_val, model, df._n_val)
                         tf.summary.image("Validation Set", plot_to_image(fig), step=img_index)

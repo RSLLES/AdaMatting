@@ -6,7 +6,7 @@ import tensorflow as tf
 from keras.utils.vis_utils import plot_model
 
 import matplotlib
-# matplotlib.use('TkAgg')
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 from os.path import join
@@ -59,17 +59,18 @@ class AdaMattingDataset:
         # Extraction de la trimap depuis l'alpha
         def extract_trimap(a):
             return tf.concat([
-                tf.cast(a <= 0, dtype=tf.float32),
-                tf.cast((a > 0) & (a < 1), dtype=tf.float32),
-                tf.cast(a >= 1, dtype=tf.float32)
+                tf.cast(a <= 0.01, dtype=tf.float32),
+                tf.cast((a > 0.01) & (a < 0.95), dtype=tf.float32),
+                tf.cast(a >= 0.95, dtype=tf.float32)
             ], axis=-1)
 
         gt_trimap = extract_trimap(gt_alpha)
 
-        # Merge inputs
+        # Merge inputs and outputs
         x = tf.concat([image, gen_trimap], axis=-1)
+        y = tf.concat([gt_trimap, gt_alpha], axis=-1)
 
-        return x, gt_trimap
+        return x, y
 
 
     def show(self, input):
