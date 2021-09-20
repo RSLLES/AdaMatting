@@ -43,10 +43,10 @@ def plot_to_image(figure):
 
 
 def image_grid(df, model, n):
-    nb_categories = 4
+    nb_categories = 5
 
     fig, axs = plt.subplots(n, nb_categories)
-    scale_img = 5
+    scale_img = 4
     fig.set_size_inches(nb_categories*scale_img,n*scale_img) 
     
     for row, data in zip(range(n), df):
@@ -54,8 +54,8 @@ def image_grid(df, model, n):
         out = model.predict(x)
         for i, title, d in zip(
                                 range(nb_categories), 
-                                ["Patched Image", "User's trimap input", "Refined Trimap", "Ground Truth Trimap"],
-                                [x[0, :,:,0:3], x[0, :,:,3:6], out[0, :,:,:], y[0, :,:,:]]
+                                ["Patched Image", "User's trimap input", "Refined Trimap", "Refined Alpha", "Ground Truth Alpha"],
+                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0][0,:,:,:], out[1][0,:,:,:], y[0,:,:,3:4]]
                             ):
             axs[row, i].imshow(d)
             axs[row, i].axis("off")
