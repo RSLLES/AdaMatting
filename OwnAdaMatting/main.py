@@ -13,7 +13,7 @@ from tensorflow.keras.optimizers import Adam
 # physical_devices = tf.config.list_physical_devices("GPU")
 # tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-from keras.utils.vis_utils import plot_model
+# from keras.utils.vis_utils import plot_model
 
 from network import get_model, MultiTaskLoss
 from dataset import AdaMattingDataset
@@ -24,12 +24,11 @@ from utils import image_grid, plot_to_image, generate_graph
 ### VARIABLES ###
 #################
 
-img_size = (512, 512)
-batch_size = 15
+img_size = (256, 256)
+batch_size = 25
 N_EPOCHS = 150
-PERIOD_TEST = 60*20 # Temps en seconde entre chaque test
+PERIOD_TEST = 60*1 # Temps en seconde entre chaque test
 last_test = time()
-
 
 ###################
 ### PREPARATION ###
@@ -41,11 +40,11 @@ while not succeed:
         print(date)
         log_dir = f'OwnAdaMatting/logs/{date}/'
         save_dir = f'OwnAdaMatting/saves/{date}/'
-        os.mkdir(save_dir)
+
         df = AdaMattingDataset("train", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         model = get_model(img_size=img_size, depth=16)
         loss_function = MultiTaskLoss()
-        opt = Adam(learning_rate=0.0001)
+        opt = Adam(learning_rate=0.001)
         # model.compile(
         #     optimizer=Adam(learning_rate=0.0001),
         #     loss=MultiTaskLoss(),
@@ -66,7 +65,6 @@ while not succeed:
         i = 0
         img_index = 0
         for epoch in range(N_EPOCHS):
-            model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
             progress_bar = tqdm(df._df_train, desc=f"epoch={epoch}")
             progress_bar.set_postfix({"loss" : None})
             for x_batch, y_batch in progress_bar:
@@ -77,7 +75,13 @@ while not succeed:
 
                 gradients = tape.gradient(loss, model.trainable_weights)
                 opt.apply_gradients(zip(gradients, model.trainable_weights))
-                progress_bar.set_postfix({"loss" : str(loss.numpy())})
+                s1 = f"{tf.exp(0.5*model.layers[-1].kernel[0]).numpy()[0]:.4f}"
+                s2 = f"{tf.exp(0.5*model.layers[-1].kernel[1]).numpy()[0]:.4f}"
+                loss_str = f"{loss.numpy():.4f}"
+                progress_bar.set_postfix({
+                    "loss" : loss_str,
+                    "s1" : s1,
+                    "s2" : s2})
 
                 # Logging training data
                 with train_writer.as_default():
@@ -85,6 +89,10 @@ while not succeed:
 
                 #  Logging testing and images
                 if time() - last_test > PERIOD_TEST:
+                    if not os.path.exists(save_dir):
+                        os.mkdir(save_dir)
+        
+                    model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
                     last_test = time()
                     Loss, Acc, Mse = [],[],[]
                     for x_batch, y_batch in df._df_test:
@@ -111,5 +119,5 @@ while not succeed:
                 i+=1
         succeed = True
     except tf.errors.ResourceExhaustedError as e:
-        batch_size = max(1, int(batch_size*0.75))
+        batch_size = max(1, batch_size-1)
         print(f"Got OOM : reducing batch size to {batch_size}")

@@ -3,10 +3,10 @@ import pandas as pd
 
 import tensorflow as tf
 
-from keras.utils.vis_utils import plot_model
+# from keras.utils.vis_utils import plot_model
 
 import matplotlib
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 from os.path import join
