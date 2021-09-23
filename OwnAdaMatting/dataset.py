@@ -5,10 +5,6 @@ import tensorflow as tf
 
 # from keras.utils.vis_utils import plot_model
 
-import matplotlib
-# matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-
 from os.path import join
 
 class AdaMattingDataset:
@@ -72,30 +68,3 @@ class AdaMattingDataset:
 
         return x, y
 
-
-    def show(self, input):
-        x, y = input
-        batch = x.shape[0]
-        fig, axs = plt.subplots(self._n_val, 3)
-        for row in range(self._n_val):
-            axs[row, 0].imshow(x[row, :,:,0:3])
-            axs[row, 0].axis("off")
-            if row == 0:
-                axs[row, 0].set_title(f"Patched image")
-
-            axs[row, 1].imshow(y[row, :,:,:])
-            axs[row, 1].axis("off")
-            if row == 0:
-                axs[row, 1].set_title(f"Real Trimap")
-
-            axs[row, 2].imshow(x[row,:,:,3:6])
-            axs[row, 2].axis("off")
-            if row == 0:
-                axs[row, 2].set_title(f"User's trimap input")
-
-        plt.legend()
-        plt.show()
-
-# Tests
-# df = AdaMattingDataset("train", "/net/rnd/DEV/Datasets_DL/alpha_matting/", shuffle_buffer=1500)
-# df.show(next(iter(df._df_val)))

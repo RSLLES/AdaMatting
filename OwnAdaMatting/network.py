@@ -140,8 +140,9 @@ class SubPixelConv (Layer):
         return (input_shape[0], input_shape[1]*2, input_shape[2]*2, int(self.depth/4))
 
 class PropagationUnit (Layer):
-    def __init__(self, depth=None, kernel=3, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
-        self.depth = depth
+    def __init__(self, depth_alpha, depth_memory, kernel=3, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        self.depth_alpha = depth_alpha
+        self.depth_memory = depth_memory
         self.kernel = kernel
         super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
 
@@ -149,59 +150,108 @@ class PropagationUnit (Layer):
         base_config = super().get_config()
         return {
             **base_config,
-            "depth" : self.depth,
-            "kernel" : self.kernel}
+            "kernel" : self.kernel,
+            "depth_alpha" : self.depth_alpha,
+            "depth_memory" : self.depth_memory}
 
     def build(self, input_shape):
-        _, _, alpha_estimation_shape = input_shape
-        self.depth = alpha_estimation_shape[-1] if self.depth == None else self.depth
-
-        self.preprocess_i = ResBlock()
         self.concatenate_img_trimap_alpha = Concatenate(axis=-1)
         self.concatenate_hi = Concatenate(axis=-1)
-        self.concatenate_ui = Concatenate(axis=-1)
+        self.concatenate_end = Concatenate(axis=-1)
+
+        self.preprocess_i = ResBlock(depth=self.depth_memory, kernel=7)
+        self.conv_gate = Conv2D(3*self.depth_memory, kernel_size=self.kernel, padding="same")
+        self.conv_output = Conv2D(self.depth_alpha, kernel_size=self.kernel, padding="same")
+
         self.sigm = Activation("sigmoid")
         self.activation = Activation("tanh")
-        self.conv_z = Conv2D(self.depth, kernel_size=self.kernel, padding="same")
-        self.conv_r = Conv2D(self.depth, kernel_size=self.kernel, padding="same")
-        self.conv_hh = Conv2D(self.depth, kernel_size=self.kernel, padding="same")
+
+        
 
     def call(self, inputs, *args, **kwargs):
-        input_img_and_trimap,  adapted_trimap, current_alpha_estimation = inputs
+        input_img_and_trimap, trimap, alpha_and_memory, mask = inputs
 
-        # Remove input user's trimap
+        # Remove user's trimap
         input_img = tf.slice(input_img_and_trimap, [0,0,0,0],[-1, -1, -1, 3])
+        alpha = tf.slice(alpha_and_memory, [0,0,0,0],[-1, -1, -1, self.depth_alpha])
+        memory = tf.slice(alpha_and_memory, [0,0,0,self.depth_alpha],[-1, -1, -1, self.depth_memory])
 
         # Preprocess
-        i = self.concatenate_img_trimap_alpha([input_img, adapted_trimap, current_alpha_estimation])
-        i = self.preprocess_i(i)
+        i = self.concatenate_img_trimap_alpha([input_img, trimap, alpha])
+        new_info = self.preprocess_i(i)
 
         # Concatenate h and i
-        h = current_alpha_estimation
+        h = alpha
         hi = self.concatenate_hi([h, i])
 
-        # Update Gate
-        z = self.sigm(self.conv_z(hi))
+        # Convolution and split into gates
+        res = self.conv_gate(hi)
+        forget_gate = self.sigm(tf.slice(res, [0,0,0,0*self.depth_memory], [-1, -1, -1, self.depth_memory]))
+        update_gate = self.sigm(tf.slice(res, [0,0,0,1*self.depth_memory], [-1, -1, -1, self.depth_memory]))
+        output_gate = self.sigm(tf.slice(res, [0,0,0,2*self.depth_memory], [-1, -1, -1, self.depth_memory]))
 
-        # Reset Gate
-        r = self.sigm(self.conv_r(hi))
-
-        # Candidate Alpha
-        u = r*h
-        ui = self.concatenate_ui([u, i])
-        hh = self.activation(self.conv_hh(ui))
+        # New memory
+        new_memory = forget_gate*memory + update_gate*new_info
+        
+        # Building new alpha
+        update = self.activation(self.conv_output(new_info*output_gate))
+        new_alpha = alpha + mask*update
 
         # Merging
-        return (1-z)*h + z*hh
+        return self.concatenate_end([new_alpha, new_memory])
 
 
     def compute_output_shape(self, input_shape):
-        _, _, alpha_estimation_shape = input_shape
-        return alpha_estimation_shape
+        return (input_shape[0], input_shape[1], input_shape[2], self.depth_alpha + self.depth_memory)
     
-#############################
-### Custom Multitask Loss ###
-#############################
+class TrimapToTrivialAlpha (Layer):
+    def __init__(self, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        return super().get_config()
+
+    def call(self, inputs, *args, **kwargs):
+        trimap = inputs
+        # bg = tf.slice(trimap, [0,0,0,0],[-1, -1, -1, 1]) # Useless because 0.0 is the default value, see right below
+        uk = tf.slice(trimap, [0,0,0,1],[-1, -1, -1, 1])
+        fg = tf.slice(trimap, [0,0,0,2],[-1, -1, -1, 1])
+
+        return fg + 0.5*uk  # + 0.0*bg
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], input_shape[2], 1)
+
+class GetUnknownRegionsMap (Layer):
+    def __init__(self, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        return super().get_config()
+
+    def call(self, inputs, *args, **kwargs):
+        trivial_alpha = inputs
+        return tf.cast(tf.abs(trivial_alpha - 0.5) < 0.1, dtype="float32") #Pour les erreurs d'arrondies
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], input_shape[2], 1)
+        
+class ArgMax (Layer):
+    def __init__(self, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        return super().get_config()
+
+    def build( self, input_shape ):
+        return super(ArgMax, self).build(input_shape)
+
+    def call(self, inputs, *args, **kwargs):
+        trimap_sorted = tf.argsort(inputs, axis=-1, direction="DESCENDING")
+        return tf.cast(trimap_sorted == 0, dtype="float32")
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
 class Weights(Layer):
     def __init__(self, output_dim, initial_value=1.0, **kwargs):
@@ -232,38 +282,14 @@ class Weights(Layer):
        return self.output_dim
 
 
-class MultiTaskLoss(Loss):
-    def __init__(self, reduction=tf.keras.losses.Reduction.NONE, name="multitaskloss"):
-        self.bce = BinaryCrossentropy(from_logits=False)
-        super().__init__(reduction=reduction, name=name)
-
-    def __call__(self, y_true, y_pred, sample_weight=None, eps=1e-6):
-        gt_trimap = tf.slice(y_true, [0,0,0,0], [-1, -1, -1, 3])
-        gt_alpha =  tf.slice(y_true, [0,0,0,3], [-1, -1, -1, 1])
-        trimap, alpha, weights = y_pred
-
-        log_s1_sqr = tf.squeeze(tf.slice(weights, [0,0], [1,1]))
-        log_s2_sqr = tf.squeeze(tf.slice(weights, [1,0], [1,1]))
-        s1_sqr = tf.exp(log_s1_sqr)
-        s2_sqr = tf.exp(log_s2_sqr)
-
-        # Loss de l'alpha (ponderes par les pixels gris estimes)
-        grey = tf.slice(trimap, [0,0,0,1], [-1, -1, -1, 1])
-        loss_alpha = tf.reduce_sum(tf.abs(alpha - gt_alpha)*grey)/(tf.reduce_sum(grey) + eps) + eps
-
-        # Loss de la trimap : Binary cross entropy
-        loss_trimap = self.bce(y_true=gt_trimap, y_pred=trimap)
-
-        # Fusion
-        return loss_trimap/(s1_sqr + eps) + loss_alpha/(s2_sqr + eps) + log_s1_sqr + log_s2_sqr
-        
-
 ########################
 ### MODEL GENERATION ###
 ########################
 
 # Il y a 3 divisions : il faut donc que img size soit un multiple de 8
 def get_model(img_size, depth=32):
+
+    observers = []
 
     ##############
     ### Entree ###
@@ -309,8 +335,8 @@ def get_model(img_size, depth=32):
 
     # Sortie
     l = Conv2D(3, kernel_size=3, padding="same", name="conv_out_trimap")(l)
-    end_trimap_decoder = Softmax()(l)
-
+    # ArgMax = Layer(lambda x : tf.cast(tf.argsort(x, axis=-1, direction="DESCENDING") == 0, dtype="float32"))
+    trimap = Softmax(axis=-1)(l)
 
     #####################
     ### Decoder Alpha ###
@@ -319,30 +345,37 @@ def get_model(img_size, depth=32):
     l = DecoderBlock(kernel=3, double_reduction=False)(end_encoder)
     # l = Concatenate()([l, deep_cut])
 
-    l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    l = DecoderBlock(kernel=3, double_reduction=False)(l)
     l = Concatenate()([l, middle_cut])
 
     l = DecoderBlock(kernel=3, double_reduction=True)(l)
     l = Concatenate()([l, shallow_cut])
 
-    l = DecoderBlock(kernel=3, double_reduction=False)(l)
+    l = DecoderBlock(kernel=3, double_reduction=True)(l)
 
     # Sortie
-    l = Conv2D(1, kernel_size=3, padding="same", name="conv_out_alpha")(l)
-    end_alpha_decoder = Activation("sigmoid")(l)
+    end_alpha_decoder = ConvBNRelu(depth=3, kernel=3, name="conv_out_alpha")(l)
 
     ########################
     ### Propagation Unit ###
     ########################
-    prop = PropagationUnit(depth=1, kernel=7)
-    alpha = end_alpha_decoder
-    for _ in range(3):
-        alpha = prop([inputs, end_trimap_decoder, alpha])
-    out = alpha
+
+    prop = PropagationUnit(depth_alpha = 1, depth_memory = 3)
+    alpha = TrimapToTrivialAlpha()(trimap)
+    observers.append(Model(inputs, alpha, name="observer_alpha_0"))
+    memory = end_alpha_decoder
+
+    unknown_region = GetUnknownRegionsMap()(alpha)
+
+    alpha_and_memory = Concatenate(axis=-1)([alpha, memory])
+    for k in range(5):
+        alpha_and_memory = prop([inputs, trimap, alpha_and_memory, unknown_region])
+        alpha = Lambda(lambda x : tf.slice(x, [0,0,0,0],[-1, -1, -1, 1]))(alpha_and_memory)
+        observers.append(Model(inputs, alpha, name=f"observer_alpha_{k+1}"))
 
     #########################
     ### Add Loss' Weights ###
     #########################
-    loss_weights = Weights(output_dim=(2,1), initial_value=2.0*tf.math.log(4.0))(inputs)
+    loss_weights = Weights(output_dim=(2,1), initial_value=tf.math.log(16.0).numpy())(inputs)
 
-    return Model(inputs=inputs, outputs=[end_trimap_decoder, out, loss_weights], name="trimap_decoder")
+    return Model(inputs=inputs, outputs=[trimap, alpha, loss_weights], name="trimap_decoder"), observers

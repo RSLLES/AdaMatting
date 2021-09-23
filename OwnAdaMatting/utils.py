@@ -1,6 +1,7 @@
 import matplotlib
 import io
 
+# import matplotlib
 # matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
@@ -42,12 +43,12 @@ def plot_to_image(figure):
     return image
 
 
-def image_grid(df, model, n):
+def classic_grid(df, n, model):
     nb_categories = 5
 
     fig, axs = plt.subplots(n, nb_categories)
-    scale_img = 4
-    fig.set_size_inches(nb_categories*scale_img,n*scale_img) 
+    scale_img = 3
+    fig.set_size_inches(nb_categories*scale_img,n*scale_img)
     
     for row, data in zip(range(n), df):
         x, y = data
@@ -62,4 +63,20 @@ def image_grid(df, model, n):
             if row == 0:
                 axs[row, i].set_title(title)
 
+    return fig
+
+def observer_grid(df, n, observers):
+    nb_categories = len(observers)
+
+    fig, axs = plt.subplots(n, nb_categories)
+    scale_img = 3
+    fig.set_size_inches(nb_categories*scale_img,n*scale_img)
+
+    for row, data in zip(range(n), df):
+        x = data[0]
+        for i in range(len(observers)):
+            axs[row, i].imshow(observers[i].predict(x)[0,:])
+            axs[row, i].axis("off")
+            if row == 0:
+                axs[row, i].set_title(observers[i].name)
     return fig
