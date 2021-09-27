@@ -1,13 +1,10 @@
 from keras.layers.core import Activation
-from keras.losses import BinaryCrossentropy
 import tensorflow as tf
 from keras.layers import Input, Conv2D, BatchNormalization, Lambda, MaxPooling2D, Add, Concatenate, Layer
 
 from keras.layers.advanced_activations import LeakyReLU, Softmax
 from keras import Model
 from keras.initializers import Constant
-from keras.backend import expand_dims
-from keras.losses import Loss
 
 #####################
 ### CUSTOM LAYERS ###
@@ -254,9 +251,10 @@ class ArgMax (Layer):
         return input_shape
 
 class Weights(Layer):
-    def __init__(self, output_dim, initial_value=1.0, **kwargs):
+    def __init__(self, output_dim, initial_value=1.0, trainable = True, **kwargs):
        self.output_dim = output_dim
        self.initial_value = initial_value
+       self.trainable = trainable
        super(Weights, self).__init__(**kwargs)
 
     def get_config(self):
@@ -265,14 +263,15 @@ class Weights(Layer):
             **base_config,
             "kernel" : self.kernel,
             "output_dim" : self.output_dim,
-            "initial_value" : self.initial_value}
+            "initial_value" : self.initial_value,
+            "trainable" : self.trainable}
 
     def build(self, input_shapes):
        self.kernel = self.add_weight(
            name='kernel', 
            shape=self.output_dim, 
            initializer=Constant(self.initial_value), 
-           trainable=True)
+           trainable=self.trainable)
        super(Weights, self).build(input_shapes)  
 
     def call(self, inputs=None):
@@ -294,7 +293,7 @@ def get_model(img_size, depth=32):
     ##############
     ### Entree ###
     ##############
-    inputs = Input(shape = img_size + (6,), name="input")
+    inputs = Input(shape = (None, None, 6), name="input")
     
     ###############
     ### Encoder ###
@@ -362,20 +361,20 @@ def get_model(img_size, depth=32):
 
     prop = PropagationUnit(depth_alpha = 1, depth_memory = 3)
     alpha = TrimapToTrivialAlpha()(trimap)
-    observers.append(Model(inputs, alpha, name="observer_alpha_0"))
     memory = end_alpha_decoder
-
     unknown_region = GetUnknownRegionsMap()(alpha)
+    observers.append(Model(inputs, unknown_region, name="mask"))
+    observers.append(Model(inputs, alpha, name="alpha_trivial"))
 
     alpha_and_memory = Concatenate(axis=-1)([alpha, memory])
-    for k in range(5):
+    for k in range(2):
         alpha_and_memory = prop([inputs, trimap, alpha_and_memory, unknown_region])
         alpha = Lambda(lambda x : tf.slice(x, [0,0,0,0],[-1, -1, -1, 1]))(alpha_and_memory)
-        observers.append(Model(inputs, alpha, name=f"observer_alpha_{k+1}"))
+        observers.append(Model(inputs, alpha, name=f"refined_alpha_{k+1}"))
 
     #########################
     ### Add Loss' Weights ###
     #########################
-    loss_weights = Weights(output_dim=(2,1), initial_value=tf.math.log(16.0).numpy())(inputs)
-
+    
+    loss_weights = Weights(output_dim=(2,1), initial_value=tf.math.log(4.0).numpy())(inputs)
     return Model(inputs=inputs, outputs=[trimap, alpha, loss_weights], name="trimap_decoder"), observers

@@ -18,10 +18,10 @@ class AlphaLoss(Loss):
 
     def __call__(self, y_true, y_pred, sample_weight=None, eps=1e-12):
         gt_alpha =  tf.slice(y_true, [0,0,0,3], [-1, -1, -1, 1])
-        trimap, alpha, _ = y_pred
-        grey = tf.slice(trimap, [0,0,0,1], [-1, -1, -1, 1])
+        gt_grey = tf.slice(y_true, [0,0,0,1], [-1, -1, -1, 1])
+        _, alpha, _ = y_pred
 
-        return tf.reduce_sum(tf.abs(alpha - gt_alpha)*grey)/(tf.reduce_sum(grey) + eps)
+        return tf.reduce_sum(tf.abs(alpha - gt_alpha)*gt_grey)/(tf.reduce_sum(gt_grey) + eps)
 
 class MultiTaskLoss(Loss):
     def __init__(self, reduction=tf.keras.losses.Reduction.NONE, name="multitaskloss"):
@@ -42,7 +42,7 @@ class AlternateLoss(Loss):
     def __init__(self, reduction=tf.keras.losses.Reduction.NONE, name="multitaskloss"):
         super().__init__(reduction=reduction, name=name)
 
-    def __call__(self, loss_trimap, loss_alpha, switch, sample_weight=None, eps=1e-7):
+    def __call__(self, loss_trimap, loss_alpha, switch, eps=1e-7):
         w1 = 1.0 if switch else eps
         w2 = eps if switch else 1.0
         return w1*loss_trimap + w2*loss_alpha

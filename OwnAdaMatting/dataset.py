@@ -1,11 +1,10 @@
-import numpy as np
-import pandas as pd
-
 import tensorflow as tf
+import tensorflow_addons as tfa
 
-# from keras.utils.vis_utils import plot_model
+from tensorflow.python.ops import gen_nn_ops
 
 from os.path import join
+from os import listdir
 
 class AdaMattingDataset:
     def __init__(self, mode, dataset_folder, batch_size=32, img_size = (1024, 1024), shuffle_buffer = 15000) -> None:
@@ -68,3 +67,102 @@ class AdaMattingDataset:
 
         return x, y
 
+
+class LiveComputedDataset:
+    def __init__(self, mode, dataset_folder, batch_size=32, img_size = (512, 512), shuffle_buffer = 15000) -> None:
+        self._size = img_size
+        self._dataset_folder = dataset_folder
+        self._mode = mode
+        self._root_folder = join(self._dataset_folder, self._mode)
+
+        self._alpha_folder = tf.constant(join(self._root_folder, "alpha/"))
+        self._fg_folder = tf.constant(join(self._root_folder, "fg/"))
+        self._bg_folder = tf.constant(join(self._root_folder, "bg/"))
+
+        self._n_test = 100
+        self._n_val = 5
+
+        self._batch_size = batch_size
+        self._autotune = tf.data.experimental.AUTOTUNE
+
+        self._ds_fg_files = tf.data.Dataset.from_tensor_slices(listdir(join(self._root_folder, "fg/"))).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
+        self._ds_bg_files = tf.data.Dataset.from_tensor_slices(listdir(join(self._root_folder, "bg/"))).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
+
+        self._df_train = tf.data.Dataset.zip((self._ds_fg_files, self._ds_bg_files))
+        # self._ds_train = self._ds_train.map(lambda x,y: self.test(x,y))
+        self._df_train = self._df_train.map(lambda x1,x2 : self.preprocess(x1,x2), num_parallel_calls=self._autotune).batch(batch_size).prefetch(self._autotune)
+        
+
+    def preprocess(self, fg_file, bg_file):
+        # Importation
+        import_img = lambda path : tf.image.convert_image_dtype(tf.image.decode_jpeg(tf.io.read_file(path)), dtype="float32")
+        gt_alpha = import_img(tf.strings.join([self._alpha_folder, fg_file]))
+        fg = import_img(tf.strings.join([self._fg_folder, fg_file]))
+        bg = import_img(tf.strings.join([self._bg_folder, bg_file]))
+
+        # Positionnement
+        bg = tf.image.resize(bg, (self._size[1], self._size[0]))
+
+        fg = tf.image.resize_with_crop_or_pad(fg, tf.shape(bg)[0], tf.shape(bg)[1])
+        gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, tf.shape(bg)[0], tf.shape(bg)[1])
+
+        angle = tf.random.uniform(shape=[], minval=0.0, maxval=2*3.1416)
+        gt_alpha = tfa.image.rotate(gt_alpha, angle)
+        fg = tfa.image.rotate(fg, angle)
+
+        limit = tf.math.divide(tf.shape(bg)[:2], 2)
+        depl =  tf.random.uniform(
+            shape=limit.shape, 
+            minval=-limit, 
+            maxval=limit, 
+            dtype="float64"
+            )
+        depl = tf.cast(depl, dtype="int32")
+
+        fg = tfa.image.translate_xy(fg, depl, replace=0)
+
+        gt_alpha = tf.repeat(gt_alpha, repeats=3, axis=-1)
+        gt_alpha = tfa.image.translate_xy(gt_alpha, depl, replace=0)
+
+        img = fg*gt_alpha + bg*(1.0-gt_alpha)
+
+        # Brightness and Contrast
+        img = tf.image.random_contrast(img, 0.8, 1.2)
+        img = tf.image.random_brightness(img, 0.1)
+        img = tf.clip_by_value(img, 0.0, 1.0)
+
+        # Gen Trimap
+        kernel_sizes =  tf.random.uniform(
+            shape=[4], 
+            minval=1, 
+            maxval=50, 
+            dtype="int32"
+            )
+
+        gt_alpha = tf.expand_dims(tf.slice(gt_alpha, [0,0,0,], [-1,-1,1]), axis=0)
+        dilated = gen_nn_ops.max_pool_v2(gt_alpha, [1, kernel_sizes[0], kernel_sizes[1], 1], [1, 1, 1, 1], "SAME")
+        eroded = -gen_nn_ops.max_pool_v2(-gt_alpha, [1, kernel_sizes[2], kernel_sizes[3], 1], [1, 1, 1, 1], "SAME")
+
+        trimap_bg = tf.cast(dilated <= 0.1, dtype="float32")
+        trimap_fg = tf.cast(eroded >= 0.95, dtype="float32")
+        trimap_uk = 1.0 - trimap_bg - trimap_fg + trimap_bg*trimap_fg
+        gen_trimap = tf.concat([trimap_bg, trimap_uk, trimap_fg], axis=-1)
+
+        gt_alpha = tf.squeeze(gt_alpha, axis=0)
+        gen_trimap = tf.squeeze(gen_trimap, axis=0)
+
+        # Extract ground truth trimap from alpha
+        def extract_trimap(a):
+            return tf.concat([
+                tf.cast(a <= 0.01, dtype=tf.float32),
+                tf.cast((a > 0.01) & (a < 0.95), dtype=tf.float32),
+                tf.cast(a >= 0.95, dtype=tf.float32)
+            ], axis=-1)
+
+        gt_trimap = extract_trimap(gt_alpha)
+
+        # Merge inputs and outputs and return
+        x = tf.concat([img, gen_trimap], axis=-1)
+        y = tf.concat([gt_trimap, gt_alpha], axis=-1)
+
+        return x, y

@@ -1,4 +1,3 @@
-import matplotlib
 import io
 
 # import matplotlib

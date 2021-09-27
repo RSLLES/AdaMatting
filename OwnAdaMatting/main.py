@@ -15,8 +15,8 @@ from tensorflow.keras.optimizers import Adam
 # from keras.utils.vis_utils import plot_model
 
 from network import get_model
-from loss import MultiTaskLoss, AlphaLoss, AdaptiveTrimapLoss
-from dataset import AdaMattingDataset
+from loss import AlternateLoss, MultiTaskLoss, AlphaLoss, AdaptiveTrimapLoss
+from dataset import LiveComputedDataset
 from utils import classic_grid, observer_grid, plot_to_image, generate_graph
 
 
@@ -24,10 +24,10 @@ from utils import classic_grid, observer_grid, plot_to_image, generate_graph
 ### VARIABLES ###
 #################
 
-img_size = (256, 256)
-batch_size = 20
-N_EPOCHS = 150
-PERIOD_TEST = 60*1 # Temps en seconde entre chaque test
+img_size = (512, 512)
+batch_size = 6
+N_EPOCHS = 15000
+PERIOD_TEST = 60*60 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
@@ -41,9 +41,9 @@ while not succeed:
         log_dir = f'OwnAdaMatting/logs/{date}/'
         save_dir = f'OwnAdaMatting/saves/{date}/'
 
-        df = AdaMattingDataset("train", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
+        df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         model, observers = get_model(img_size=img_size, depth=16)
-        opt = Adam(learning_rate=0.0001)
+        opt = Adam(learning_rate=0.001)
         
         loss_alpha_func = AlphaLoss()
         loss_trimap_func = AdaptiveTrimapLoss()
@@ -63,7 +63,10 @@ while not succeed:
         #####################
         i = 0
         img_index = 0
-        for epoch in range(N_EPOCHS):
+        epoch = 0
+        while True:
+            epoch+=1
+            set_profiler = True
             progress_bar = tqdm(df._df_train, desc=f"epoch={epoch}")
             progress_bar.set_postfix({"loss" : None})
 
@@ -99,32 +102,34 @@ while not succeed:
         
                     model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
                     last_test = time()
-                    Loss = []
-                    for x_batch, y_batch in df._df_test:
-                        y_pred = model(x_batch, training=False)
-                        loss_alpha = loss_alpha_func(y_batch, y_pred) + 0.01 # Ajout pour eviter les divisions
-                        loss_trimap = loss_trimap_func(y_batch, y_pred)
-                        loss = loss_multitask_func(y_batch, y_pred, loss_trimap, loss_alpha)
-                        Loss.append(loss)
+                    # Loss = []
+                    # for x_batch, y_batch in df._df_test:
+                    #     y_pred = model(x_batch, training=False)
+                    #     loss_alpha = loss_alpha_func(y_batch, y_pred)
+                    #     loss_trimap = loss_trimap_func(y_batch, y_pred)
+                    #     loss = loss_multitask_func(y_batch, y_pred, loss_trimap, loss_alpha)
+                    #     Loss.append(loss)
 
-                    mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
+                    # mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 
                     with test_writer.as_default():
-                        tf.summary.scalar("MultiTaskLoss", mean(Loss), step=i)
+                        # tf.summary.scalar("MultiTaskLoss", mean(Loss), step=i)
 
-                        fig_classic = classic_grid(df._df_val, df._n_val, model)
+                        fig_classic = classic_grid(df._df_train, df._n_val, model)
                         tf.summary.image("Validation Set", plot_to_image(fig_classic), step=img_index)
 
-                        fig_observers = observer_grid(df._df_val, df._n_val, observers)
+                        fig_observers = observer_grid(df._df_train, df._n_val, observers)
                         tf.summary.image("Observations", plot_to_image(fig_observers), step=img_index)
 
                         img_index+=1
 
                 # Logging profiler info
-                if i == 10:
+                if epoch == 5 and set_profiler:
                     tf.profiler.experimental.start(join(log_dir, "profiler/"))
-                if i == 100:
+                    set_profiler = False
+                if epoch == 10 and set_profiler:
                     tf.profiler.experimental.stop()
+                    set_profiler = False
                 
                 # Next loop
                 i+=1
