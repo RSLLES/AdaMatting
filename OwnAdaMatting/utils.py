@@ -38,12 +38,12 @@ def plot_to_image(figure):
     image = tf.image.decode_png(buf.getvalue(), channels=4)
 
     # Add the batch dimension
-    image = tf.expand_dims(image, 0)
+    image = tf.expand_dims(image, 0)    
     return image
 
 
 def classic_grid(df, n, model):
-    nb_categories = 5
+    nb_categories = 7
 
     fig, axs = plt.subplots(n, nb_categories)
     scale_img = 3
@@ -52,10 +52,21 @@ def classic_grid(df, n, model):
     for row, data in zip(range(n), df):
         x, y = data
         out = model.predict(x)
+
+        background = tf.concat([
+            tf.ones(shape=out[1].shape),
+            tf.ones(shape=out[1].shape),
+            tf.zeros(shape=out[1].shape)
+        ], axis=-1)
+
+        alpha = tf.repeat(tf.clip_by_value(out[1], 0.0, 1.0), 3, axis=-1)
+        pred_alpha = tf.repeat(tf.clip_by_value(y[:,:,:,3:4], 0.0, 1.0), 3, axis=-1)
+        composed = x[:,:,:,0:3]*alpha  + background*(1.0-alpha)
+
         for i, title, d in zip(
                                 range(nb_categories), 
-                                ["Patched Image", "User's trimap input", "Refined Trimap", "Refined Alpha", "Ground Truth Alpha"],
-                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0][0,:,:,:], out[1][0,:,:,:], y[0,:,:,3:4]]
+                                ["Patched Image", "User's trimap input", "Refined Trimap", "Ground Truth Trimap", "Refined Alpha", "Ground Truth Alpha", "Composed"],
+                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0][0,:,:,:], y[0,:,:,0:3], alpha[0,:,:,:], pred_alpha[0,:,:,:], composed[0,:,:,:]]
                             ):
             axs[row, i].imshow(d)
             axs[row, i].axis("off")
@@ -63,6 +74,37 @@ def classic_grid(df, n, model):
                 axs[row, i].set_title(title)
 
     return fig
+
+def val_grid(df, n, model):
+    nb_categories = 5
+
+    fig, axs = plt.subplots(n, nb_categories)
+    scale_img = 7
+    fig.set_size_inches(nb_categories*scale_img,n*scale_img)
+    
+    for row, x in zip(range(n), df):
+        out = model.predict(x)
+
+        background = tf.concat([
+            tf.ones(shape=out[1].shape),
+            tf.ones(shape=out[1].shape),
+            tf.zeros(shape=out[1].shape)
+            ], axis=-1)
+
+        alpha = tf.repeat(tf.clip_by_value(out[1], 0.0, 1.0), 3, axis=-1)
+        composed = x*alpha + background*(1.0-alpha)
+        for i, title, d in zip(
+                                range(nb_categories), 
+                                ["Patched Image", "User's trimap input", "Refined Trimap", "Refined Alpha", "Composed Image"],
+                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0][0,:,:,:], alpha[0,:,:,:], composed[0,:,:,:]]
+                            ):
+            axs[row, i].imshow(d)
+            axs[row, i].axis("off")
+            if row == 0:
+                axs[row, i].set_title(title)
+
+    return fig
+
 
 def observer_grid(df, n, observers):
     nb_categories = len(observers)

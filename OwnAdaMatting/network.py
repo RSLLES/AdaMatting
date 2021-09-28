@@ -163,7 +163,6 @@ class PropagationUnit (Layer):
         self.sigm = Activation("sigmoid")
         self.activation = Activation("tanh")
 
-        
 
     def call(self, inputs, *args, **kwargs):
         input_img_and_trimap, trimap, alpha_and_memory, mask = inputs
