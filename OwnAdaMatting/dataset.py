@@ -136,14 +136,16 @@ class LiveComputedDataset:
         fg = import_img(tf.strings.join([self._fg_folder, fg_file]))
         bg = import_img(tf.strings.join([self._bg_folder, bg_file]))
 
-        # Positionnement
-        fg = tf.image.resize_with_crop_or_pad(fg, tf.shape(bg)[0], tf.shape(bg)[1])
-        gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, tf.shape(bg)[0], tf.shape(bg)[1])
-
+        # Angle, Flip et rescale
         angle = tf.random.uniform(shape=[], minval=0.0, maxval=2*3.1416)
         gt_alpha = tfa.image.rotate(gt_alpha, angle)
         fg = tfa.image.rotate(fg, angle)
 
+        # Adaptation taille to patch
+        fg = tf.image.resize_with_crop_or_pad(fg, tf.shape(bg)[0], tf.shape(bg)[1])
+        gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, tf.shape(bg)[0], tf.shape(bg)[1])
+
+        # Position
         limit = tf.math.divide(tf.shape(bg)[:2], 2)
         depl =  tf.random.uniform(
             shape=limit.shape, 
@@ -159,7 +161,7 @@ class LiveComputedDataset:
 
         # Random Crop
         all = tf.concat([fg, bg, gt_alpha], axis=-1)
-        if tf.reduce_all(self._size_tf <= tf.shape(all)):
+        if tf.reduce_all(self._size_tf <= tf.shape(all) ):
             all = tf.image.random_crop(all, size=self._size_tf)
         else:
             all = tf.image.resize(all, self._size_tf[0:2])
@@ -176,25 +178,48 @@ class LiveComputedDataset:
         img = tf.clip_by_value(img, 0.0, 1.0)
 
         # Gen Trimap
-        def dilate_trimap(gt_alpha, kernel_sizes):
-            dilated = gen_nn_ops.max_pool_v2(gt_alpha, [1, kernel_sizes[0], kernel_sizes[1], 1], [1, 1, 1, 1], "SAME")
-            eroded = -gen_nn_ops.max_pool_v2(-gt_alpha, [1, kernel_sizes[2], kernel_sizes[3], 1], [1, 1, 1, 1], "SAME")
+        @tf.function
+        def random_dilate(dilated, eroded):
+            kernel_sizes =  tf.random.uniform(
+                shape=[4], 
+                minval=3, 
+                maxval=10, 
+                dtype="int32"
+                )
+            dilated = gen_nn_ops.max_pool_v2(dilated, [1, kernel_sizes[0], kernel_sizes[1], 1], [1, 1, 1, 1], "SAME")
+            eroded = -gen_nn_ops.max_pool_v2(-eroded, [1, kernel_sizes[2], kernel_sizes[3], 1], [1, 1, 1, 1], "SAME")
+            return dilated, eroded
+        
+        @tf.function
+        def constant_dilate(dilated, eroded, strengh=3):
+            dilated = gen_nn_ops.max_pool_v2(dilated, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
+            eroded = -gen_nn_ops.max_pool_v2(-eroded, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
+            return dilated, eroded
+
+        @tf.function
+        def build_trimap(gt_alpha, func, i=tf.constant(1, dtype="int32")):
+            dilated, eroded = gt_alpha, gt_alpha
+            if tf.less(0, i):
+                dilated, eroded = func(dilated, eroded)
+            if tf.less(1, i):
+                dilated, eroded = func(dilated, eroded)
+            if tf.less(2, i):
+                dilated, eroded = func(dilated, eroded)
+            if tf.less(3, i):
+                dilated, eroded = func(dilated, eroded)
+            if tf.less(4, i):
+                dilated, eroded = func(dilated, eroded)
 
             trimap_bg = tf.cast(dilated <= 0.1, dtype="float32")
             trimap_fg = tf.cast(eroded >= 0.95, dtype="float32")
             trimap_uk = 1.0 - trimap_bg - trimap_fg + trimap_bg*trimap_fg
             return tf.concat([trimap_bg, trimap_uk, trimap_fg], axis=-1)
-        
-        gt_alpha = tf.expand_dims(tf.slice(gt_alpha, [0,0,0], [-1,-1,1]), axis=0)
-        kernel_sizes =  tf.random.uniform(
-            shape=[4], 
-            minval=10, 
-            maxval=100, 
-            dtype="int32"
-            )
+    
 
-        gen_trimap = dilate_trimap(gt_alpha, kernel_sizes)
-        gt_trimap = dilate_trimap(gt_alpha, [3,3,3,3])
+        gt_alpha = tf.expand_dims(tf.slice(gt_alpha, [0,0,0], [-1,-1,1]), axis=0)
+
+        gen_trimap = build_trimap(gt_alpha, random_dilate, i = tf.random.uniform(shape=[], minval=1, maxval=5, dtype="int32"))
+        gt_trimap = build_trimap(gt_alpha, constant_dilate)
 
         gen_trimap = tf.squeeze(gen_trimap, axis=0)
         gt_trimap = tf.squeeze(gt_trimap, axis=0)
