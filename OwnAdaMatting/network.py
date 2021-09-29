@@ -191,7 +191,8 @@ class PropagationUnit (Layer):
         
         # Building new alpha
         update = self.activation(self.conv_output(new_info*output_gate))
-        new_alpha = alpha + mask*update
+        # new_alpha = alpha + mask*update
+        new_alpha = alpha + update
 
         # Merging
         return self.concatenate_end([new_alpha, new_memory])

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from keras.losses import Loss, BinaryCrossentropy
+from keras.losses import Loss, BinaryCrossentropy, MAE
 
 
 class AdaptiveTrimapLoss(Loss):
@@ -21,7 +21,8 @@ class AlphaLoss(Loss):
         gt_grey = tf.slice(y_true, [0,0,0,1], [-1, -1, -1, 1])
         _, alpha, _ = y_pred
 
-        return tf.reduce_sum(tf.abs(alpha - gt_alpha)*gt_grey)/(tf.reduce_sum(gt_grey) + eps)
+        # return tf.reduce_sum(tf.abs(alpha - gt_alpha)*gt_grey)/(tf.reduce_sum(gt_grey) + eps)
+        return MAE(gt_alpha, alpha)
 
 class MultiTaskLoss(Loss):
     def __init__(self, reduction=tf.keras.losses.Reduction.NONE, name="multitaskloss"):

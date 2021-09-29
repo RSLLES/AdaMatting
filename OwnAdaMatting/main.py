@@ -1,6 +1,7 @@
 import os
 # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+# os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
 
 from os.path import join
 from tqdm import tqdm
@@ -27,9 +28,9 @@ mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 ### VARIABLES ###
 #################
 
-img_size = (256, 256)
-batch_size = 6
-PERIOD_TEST = 60*1 # Temps en seconde entre chaque test
+img_size = (304, 304)
+batch_size = 25
+PERIOD_TEST = 60*5 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
@@ -45,8 +46,8 @@ while not succeed:
  
         df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         model, observers = get_model(img_size=img_size, depth=16)
-        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/09-28_15h21/09-28_16h47.h5")
-        opt = Adam(learning_rate=0.001)
+        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/09-28_18h11/09-29_11h14.h5")
+        opt = Adam(learning_rate=0.0001)
         
         loss_alpha_func = AlphaLoss()
         loss_trimap_func = AdaptiveTrimapLoss()
