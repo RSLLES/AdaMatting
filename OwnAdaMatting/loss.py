@@ -1,5 +1,5 @@
 import tensorflow as tf
-from keras.losses import Loss, BinaryCrossentropy, MAE
+from keras.losses import Loss, BinaryCrossentropy, MeanAbsoluteError
 
 
 class AdaptiveTrimapLoss(Loss):
@@ -14,15 +14,16 @@ class AdaptiveTrimapLoss(Loss):
 
 class AlphaLoss(Loss):
     def __init__(self, reduction=tf.keras.losses.Reduction.NONE, name="alphaLoss"):
+        self.mae = MeanAbsoluteError()
         super().__init__(reduction=reduction, name=name)
 
     def __call__(self, y_true, y_pred, sample_weight=None, eps=1e-12):
         gt_alpha =  tf.slice(y_true, [0,0,0,3], [-1, -1, -1, 1])
-        gt_grey = tf.slice(y_true, [0,0,0,1], [-1, -1, -1, 1])
+        # gt_grey = tf.slice(y_true, [0,0,0,1], [-1, -1, -1, 1])
         _, alpha, _ = y_pred
 
         # return tf.reduce_sum(tf.abs(alpha - gt_alpha)*gt_grey)/(tf.reduce_sum(gt_grey) + eps)
-        return MAE(gt_alpha, alpha)
+        return self.mae(gt_alpha, alpha)
 
 class MultiTaskLoss(Loss):
     def __init__(self, reduction=tf.keras.losses.Reduction.NONE, name="multitaskloss"):
