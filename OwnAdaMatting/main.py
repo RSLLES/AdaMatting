@@ -28,14 +28,15 @@ mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 ### VARIABLES ###
 #################
 
-img_size = (304, 304)
-batch_size = 16
+img_size = (512, 512)
+batch_size = 5
 PERIOD_TEST = 60*5 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
 ### PREPARATION ###
 ###################
+
 succeed = False
 while not succeed:
     try:
@@ -44,9 +45,9 @@ while not succeed:
         log_dir = f'OwnAdaMatting/logs/{date}/'
         save_dir = f'OwnAdaMatting/saves/{date}/'
  
-        df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
+        df = LiveComputedDataset("picky", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         model, observers = get_model(img_size=img_size, depth=16)
-        model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/09-29_16h59/09-29_19h07.h5")
+        model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/09-29_19h15/10-01_10h13.h5")
         opt = Adam(learning_rate=0.0001)
         
         loss_alpha_func = AlphaLoss()

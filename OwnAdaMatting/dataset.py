@@ -133,6 +133,7 @@ class LiveComputedDataset:
         # Importation
         import_img = lambda path : tf.image.convert_image_dtype(tf.image.decode_jpeg(tf.io.read_file(path)), dtype="float32")
         gt_alpha = import_img(tf.strings.join([self._alpha_folder, fg_file]))
+        gt_alpha = tf.slice(gt_alpha, [0,0,0], [-1, -1, 1]) # Safety
         fg = import_img(tf.strings.join([self._fg_folder, fg_file]))
         bg = import_img(tf.strings.join([self._bg_folder, bg_file]))
 
@@ -141,12 +142,17 @@ class LiveComputedDataset:
         gt_alpha = tfa.image.rotate(gt_alpha, angle)
         fg = tfa.image.rotate(fg, angle)
 
+        # gt_alpha = tf.image.resize(gt_alpha, self._size_tf[0:2])
+        # fg = tf.image.resize(fg, self._size_tf[0:2])
+        # bg = tf.image.resize(bg, self._size_tf[0:2])
+
         # Adaptation taille to patch
-        fg = tf.image.resize_with_crop_or_pad(fg, tf.shape(bg)[0], tf.shape(bg)[1])
-        gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, tf.shape(bg)[0], tf.shape(bg)[1])
+        # fg = tf.image.resize_with_crop_or_pad(fg, tf.shape(bg)[0], tf.shape(bg)[1])
+        # gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, tf.shape(bg)[0], tf.shape(bg)[1])
+        bg = tf.image.resize(bg, tf.shape(fg)[:2])
 
         # Position
-        limit = tf.math.divide(tf.shape(bg)[:2], 2)
+        limit = tf.math.divide(tf.shape(bg)[:2], 3)
         depl =  tf.random.uniform(
             shape=limit.shape, 
             minval=-limit, 
@@ -183,7 +189,7 @@ class LiveComputedDataset:
             kernel_sizes =  tf.random.uniform(
                 shape=[4], 
                 minval=3, 
-                maxval=10, 
+                maxval=30, 
                 dtype="int32"
                 )
             dilated = gen_nn_ops.max_pool_v2(dilated, [1, kernel_sizes[0], kernel_sizes[1], 1], [1, 1, 1, 1], "SAME")
@@ -192,8 +198,8 @@ class LiveComputedDataset:
         
         @tf.function
         def constant_dilate(dilated, eroded, strengh=3):
-            dilated = gen_nn_ops.max_pool_v2(dilated, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
-            eroded = -gen_nn_ops.max_pool_v2(-eroded, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
+            # dilated = gen_nn_ops.max_pool_v2(dilated, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
+            # eroded = -gen_nn_ops.max_pool_v2(-eroded, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
             return dilated, eroded
 
         @tf.function
@@ -227,3 +233,8 @@ class LiveComputedDataset:
 
         return tf.concat([img, gen_trimap], axis=-1), tf.concat([gt_trimap, gt_alpha], axis=-1)
 
+# df = LiveComputedDataset("picky", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=(512, 512), batch_size=1)
+# fg = next(iter(df._ds_test_fg_files))
+# bg = next(iter(df._ds_test_bg_files))
+# a = df.preprocess(fg, bg)
+# print(a)
