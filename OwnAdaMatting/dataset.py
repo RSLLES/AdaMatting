@@ -71,6 +71,7 @@ from os import listdir
 class LiveComputedDataset:
     def __init__(self, mode, dataset_folder, batch_size=32, img_size = (512, 512), shuffle_buffer = 15000) -> None:
         self._size = img_size
+        self._init_size = tf.constant([2*self._size[1], 2*self._size[0]]) 
         self._size_tf = tf.constant([self._size[1], self._size[0], 3+3+3])
         self._dataset_folder = dataset_folder
         self._mode = mode
@@ -80,8 +81,8 @@ class LiveComputedDataset:
         self._fg_folder = tf.constant(join(self._root_folder, "fg/"))
         self._bg_folder = tf.constant(join(self._root_folder, "bg/"))
 
-        self._n_test = 10
-        self._n_images = 5
+        self._n_test = 60
+        self._n_images = 7
 
         self._batch_size = batch_size
         self._autotune = tf.data.experimental.AUTOTUNE
@@ -147,9 +148,11 @@ class LiveComputedDataset:
         # bg = tf.image.resize(bg, self._size_tf[0:2])
 
         # Adaptation taille to patch
-        # fg = tf.image.resize_with_crop_or_pad(fg, tf.shape(bg)[0], tf.shape(bg)[1])
-        # gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, tf.shape(bg)[0], tf.shape(bg)[1])
-        bg = tf.image.resize(bg, tf.shape(fg)[:2])
+        bg = tf.image.resize_with_crop_or_pad(bg, self._init_size[0], self._init_size[1])
+        gt_alpha = tf.image.resize_with_pad(gt_alpha, self._init_size[0], self._init_size[1])
+        fg = tf.image.resize_with_pad(fg, self._init_size[0], self._init_size[1])
+        # fg = tf.image.resize_with_crop_or_pad(fg, self._init_size[0], self._init_size[1])
+        # gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, self._init_size[0], self._init_size[1])
 
         # Position
         limit = tf.math.divide(tf.shape(bg)[:2], 3)
