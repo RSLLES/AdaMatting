@@ -102,6 +102,7 @@ while not succeed:
 
             #  Logging testing and images
             if time() - last_test > PERIOD_TEST:
+
                 if not os.path.exists(save_dir):
                     os.mkdir(save_dir)
     
@@ -109,7 +110,7 @@ while not succeed:
                 last_test = time()
                 
                 Loss_alpha, Loss_trimap, Loss = [],[],[]
-                for x_batch, y_batch in df._ds_test:
+                for x_batch, y_batch in tqdm(df._ds_test, desc="TEST"):
                     y_pred = model(x_batch, training=True)
                     loss_alpha = loss_alpha_func(y_batch, y_pred)
                     loss_trimap = loss_trimap_func(y_batch, y_pred)
