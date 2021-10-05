@@ -159,9 +159,10 @@ class LiveComputedDataset:
         # gt_alpha = tf.image.resize(gt_alpha, self._size_tf[0:2])
         # fg = tf.image.resize(fg, self._size_tf[0:2])
         # bg = tf.image.resize(bg, self._size_tf[0:2])
+        bg = tf.image.resize(bg, self._working_res[0:2])
 
         # Adaptation taille to patch
-        bg = tf.image.random_crop(bg, size=self._working_res)
+        # bg = tf.image.random_crop(bg, size=self._working_res)
         gt_alpha = tf.image.resize_with_pad(gt_alpha, self._working_res[0], self._working_res[1])
         fg = tf.image.resize_with_pad(fg, self._working_res[0], self._working_res[1])
 
