@@ -71,7 +71,7 @@ from os import listdir
 class LiveComputedDataset:
     def __init__(self, mode, dataset_folder, batch_size=32, img_size = (512, 512), shuffle_buffer = 15000) -> None:
         self._size = img_size
-        self._init_size = tf.constant([2*self._size[1], 2*self._size[0]]) 
+        self._init_size = tf.constant([2*self._size[1], 2*self._size[0], 3]) 
         self._size_tf = tf.constant([self._size[1], self._size[0], 3+3+3])
         self._dataset_folder = dataset_folder
         self._mode = mode
@@ -129,7 +129,6 @@ class LiveComputedDataset:
         return tf.concat([img, tri], axis=-1)
 
 
-
     def preprocess(self, fg_file, bg_file):
         # Importation
         import_img = lambda path : tf.image.convert_image_dtype(tf.image.decode_jpeg(tf.io.read_file(path)), dtype="float32")
@@ -148,14 +147,14 @@ class LiveComputedDataset:
         # bg = tf.image.resize(bg, self._size_tf[0:2])
 
         # Adaptation taille to patch
-        bg = tf.image.resize_with_crop_or_pad(bg, self._init_size[0], self._init_size[1])
+        bg = tf.image.random_crop(bg, size=self._init_size)
         gt_alpha = tf.image.resize_with_pad(gt_alpha, self._init_size[0], self._init_size[1])
         fg = tf.image.resize_with_pad(fg, self._init_size[0], self._init_size[1])
         # fg = tf.image.resize_with_crop_or_pad(fg, self._init_size[0], self._init_size[1])
         # gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, self._init_size[0], self._init_size[1])
 
         # Position
-        limit = tf.math.divide(tf.shape(bg)[:2], 3)
+        limit = tf.math.divide(tf.shape(bg)[:2], 5)
         depl =  tf.random.uniform(
             shape=limit.shape, 
             minval=-limit, 
@@ -191,8 +190,8 @@ class LiveComputedDataset:
         def random_dilate(dilated, eroded):
             kernel_sizes =  tf.random.uniform(
                 shape=[4], 
-                minval=3, 
-                maxval=30, 
+                minval=1, 
+                maxval=60, 
                 dtype="int32"
                 )
             dilated = gen_nn_ops.max_pool_v2(dilated, [1, kernel_sizes[0], kernel_sizes[1], 1], [1, 1, 1, 1], "SAME")
