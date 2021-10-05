@@ -54,7 +54,7 @@ nuage = tfa.image.gaussian_filter2d(
     sigma = 1.0
     )
 
-u = tf.image.central_crop(u, 8/9)
+u = tf.image.crop_to_bounding_box(u, 8, 8, 128, 128)
 u = tf.image.resize(u, alpha.shape[1:3])
 nuage = tf.image.resize(nuage, alpha.shape[1:3])
 bg = tf.cast(tf.slice(trimap_in, [0, 0, 0, 0], [-1, -1, -1, 1]) - u > nuage , dtype="float32")
