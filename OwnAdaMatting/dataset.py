@@ -71,11 +71,25 @@ from os import listdir
 class LiveComputedDataset:
     def __init__(self, mode, dataset_folder, batch_size=32, img_size = (512, 512), shuffle_buffer = 15000) -> None:
         self._size = img_size
-        self._init_size = tf.constant([2*self._size[1], 2*self._size[0], 3]) 
+        self._working_res = tf.constant([2*self._size[1], 2*self._size[0], 3])
         self._size_tf = tf.constant([self._size[1], self._size[0], 3+3+3])
         self._dataset_folder = dataset_folder
         self._mode = mode
         self._root_folder = join(self._dataset_folder, self._mode)
+
+
+        self._laplacian_kernel = tf.expand_dims(tf.expand_dims(
+            tf.constant([
+                [1,  1, 1],
+                [1, -8, 1],
+                [1,  1, 1]
+            ], dtype="float32")*tf.constant((0.05), dtype="float32"), axis=-1), axis=-1)
+        self._heat_equation_size = tf.constant([int(self._size[1]/8), int(self._size[0]/8)], dtype="int32")
+        self._heat_equation_size_alone = int(self._size[1]/8)
+        self._nb_iterations = 75
+
+        self._padding_cst = 8
+        self._central_crop = 1 - self._padding_cst*8/self._size[0]
 
         self._alpha_folder = tf.constant(join(self._root_folder, "alpha/"))
         self._fg_folder = tf.constant(join(self._root_folder, "fg/"))
@@ -92,7 +106,7 @@ class LiveComputedDataset:
         self._ds_val_files = tf.data.Dataset.from_tensor_slices(listdir("/net/homes/r/rseailles/Deep/Alphamatting/alphas/"))
 
         self._ds_test_fg_files = self._ds_fg_files.take(self._n_test)
-        self._ds_test_bg_files = self._ds_bg_files.take(self._n_test)
+        self._ds_test_bg_files = self._ds_bg_files.take(self._n_test).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
         self._ds_train_fg_files = self._ds_fg_files.skip(self._n_test).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
         self._ds_train_bg_files = self._ds_bg_files.skip(self._n_test).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
 
@@ -147,11 +161,9 @@ class LiveComputedDataset:
         # bg = tf.image.resize(bg, self._size_tf[0:2])
 
         # Adaptation taille to patch
-        bg = tf.image.random_crop(bg, size=self._init_size)
-        gt_alpha = tf.image.resize_with_pad(gt_alpha, self._init_size[0], self._init_size[1])
-        fg = tf.image.resize_with_pad(fg, self._init_size[0], self._init_size[1])
-        # fg = tf.image.resize_with_crop_or_pad(fg, self._init_size[0], self._init_size[1])
-        # gt_alpha = tf.image.resize_with_crop_or_pad(gt_alpha, self._init_size[0], self._init_size[1])
+        bg = tf.image.random_crop(bg, size=self._working_res)
+        gt_alpha = tf.image.resize_with_pad(gt_alpha, self._working_res[0], self._working_res[1])
+        fg = tf.image.resize_with_pad(fg, self._working_res[0], self._working_res[1])
 
         # Position
         limit = tf.math.divide(tf.shape(bg)[:2], 5)
@@ -185,57 +197,79 @@ class LiveComputedDataset:
         img = tf.image.random_brightness(img, 0.1)
         img = tf.clip_by_value(img, 0.0, 1.0)
 
+        # Expand Alpha
+        gt_alpha = tf.expand_dims(tf.slice(gt_alpha, [0,0,0], [-1,-1,1]), axis=0)
+
+        # Ground Truth Trimap
+        @tf.function
+        def build_gt_trimap(gt_alpha):
+            trimap_bg = tf.cast(gt_alpha <= 0.1, dtype="float32")
+            trimap_fg = tf.cast(gt_alpha >= 0.95, dtype="float32")
+            trimap_uk = 1.0 - trimap_bg - trimap_fg + trimap_bg*trimap_fg
+            return tf.concat([trimap_bg, trimap_uk, trimap_fg], axis=-1)
+
+        gt_trimap = build_gt_trimap(gt_alpha)
+
         # Gen Trimap
         @tf.function
-        def random_dilate(dilated, eroded):
-            kernel_sizes =  tf.random.uniform(
-                shape=[4], 
-                minval=1, 
-                maxval=60, 
-                dtype="int32"
-                )
-            dilated = gen_nn_ops.max_pool_v2(dilated, [1, kernel_sizes[0], kernel_sizes[1], 1], [1, 1, 1, 1], "SAME")
-            eroded = -gen_nn_ops.max_pool_v2(-eroded, [1, kernel_sizes[2], kernel_sizes[3], 1], [1, 1, 1, 1], "SAME")
-            return dilated, eroded
-        
-        @tf.function
-        def constant_dilate(dilated, eroded, strengh=3):
-            # dilated = gen_nn_ops.max_pool_v2(dilated, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
-            # eroded = -gen_nn_ops.max_pool_v2(-eroded, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
-            return dilated, eroded
-
-        @tf.function
-        def build_trimap(gt_alpha, func, i=tf.constant(1, dtype="int32")):
-            dilated, eroded = gt_alpha, gt_alpha
-            if tf.less(0, i):
-                dilated, eroded = func(dilated, eroded)
-            if tf.less(1, i):
-                dilated, eroded = func(dilated, eroded)
-            if tf.less(2, i):
-                dilated, eroded = func(dilated, eroded)
-            if tf.less(3, i):
-                dilated, eroded = func(dilated, eroded)
-            if tf.less(4, i):
-                dilated, eroded = func(dilated, eroded)
+        def build_initial_condition(gt_alpha, strengh=10): # Strengh should be > 8 (because right after this, the resize operation divide the image dimensions by 8
+            dilated = gen_nn_ops.max_pool_v2(gt_alpha, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
+            eroded = -gen_nn_ops.max_pool_v2(-gt_alpha, [1, strengh, strengh, 1], [1, 1, 1, 1], "SAME")
 
             trimap_bg = tf.cast(dilated <= 0.1, dtype="float32")
             trimap_fg = tf.cast(eroded >= 0.95, dtype="float32")
             trimap_uk = 1.0 - trimap_bg - trimap_fg + trimap_bg*trimap_fg
-            return tf.concat([trimap_bg, trimap_uk, trimap_fg], axis=-1)
-    
+            return trimap_uk
+        
+        u_ori = build_initial_condition(gt_alpha, strengh=10)
 
-        gt_alpha = tf.expand_dims(tf.slice(gt_alpha, [0,0,0], [-1,-1,1]), axis=0)
+        # Resize and pad before use
+        u_ori = tf.pad(
+            tf.image.resize(u_ori, self._heat_equation_size), 
+            paddings=tf.constant(
+                [
+                    [0,0],
+                    [self._padding_cst,self._padding_cst],
+                    [self._padding_cst,self._padding_cst],
+                    [0,0]
+                ]), 
+            mode="SYMMETRIC")
 
-        gen_trimap = build_trimap(gt_alpha, random_dilate, i = tf.random.uniform(shape=[], minval=1, maxval=5, dtype="int32"))
-        gt_trimap = build_trimap(gt_alpha, constant_dilate)
+        @tf.function
+        def solve_heat_eq(u_0):
+            u = u_0
+            for _ in range(self._nb_iterations):
+                laplacian_u = tf.nn.conv2d(u, self._laplacian_kernel, strides=[1,1,1,1], padding="SAME")
+                u = tf.clip_by_value(u + laplacian_u + u_0, 0.0, 1.0)
+            return u
 
+        u = solve_heat_eq(u_ori)
+        nuage = tfa.image.gaussian_filter2d(
+            image = tf.clip_by_value(tf.random.normal((16, 16, 1), mean=0.5, stddev=0.6), 0.0, 1.0),
+            filter_shape = 5,
+            sigma = 1.0
+        )
+
+        u = tf.image.crop_to_bounding_box(u, self._padding_cst, self._padding_cst, self._heat_equation_size_alone, self._heat_equation_size_alone)
+        u = tf.image.resize(u, self._size_tf[:2])
+        nuage = tf.image.resize(nuage, self._size_tf[:2])
+        bg = tf.cast(tf.slice(gt_trimap, [0, 0, 0, 0], [-1, -1, -1, 1]) - u > nuage , dtype="float32")
+        fg = tf.cast(tf.slice(gt_trimap, [0, 0, 0, 2], [-1, -1, -1, 1]) - u > nuage , dtype="float32")
+
+        gen_trimap = tf.concat([
+            bg,
+            1.0 - fg - bg + fg*bg,
+            fg
+        ], axis=-1)
+        
+        # Squeeze
         gen_trimap = tf.squeeze(gen_trimap, axis=0)
         gt_trimap = tf.squeeze(gt_trimap, axis=0)
         gt_alpha = tf.squeeze(gt_alpha, axis=0)
 
         return tf.concat([img, gen_trimap], axis=-1), tf.concat([gt_trimap, gt_alpha], axis=-1)
 
-# df = LiveComputedDataset("picky", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=(512, 512), batch_size=1)
+# df = LiveComputedDataset("picky2", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=(512, 512), batch_size=1)
 # fg = next(iter(df._ds_test_fg_files))
 # bg = next(iter(df._ds_test_bg_files))
 # a = df.preprocess(fg, bg)
