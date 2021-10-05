@@ -29,8 +29,8 @@ mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 #################
 
 img_size = (19*16, 19*16)
-batch_size = 4
-PERIOD_TEST = 60*0.5 # Temps en seconde entre chaque test
+batch_size = 8
+PERIOD_TEST = 60*5 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
