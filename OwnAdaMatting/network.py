@@ -359,11 +359,11 @@ def get_model(img_size, depth=32):
     ### Propagation Unit ###
     ########################
 
-    prop = PropagationUnit(depth_alpha = 1, depth_memory = 3)
+    prop = PropagationUnit(depth_alpha = 1, depth_memory = 16)
     alpha = TrimapToTrivialAlpha()(trimap)
     memory = end_alpha_decoder
     unknown_region = GetUnknownRegionsMap()(alpha)
-    observers.append(Model(inputs, unknown_region, name="mask"))
+    # observers.append(Model(inputs, unknown_region, name="mask"))
     observers.append(Model(inputs, alpha, name="alpha_trivial"))
 
     alpha_and_memory = Concatenate(axis=-1)([alpha, memory])
