@@ -353,7 +353,7 @@ def get_model(img_size, depth=32):
     l = DecoderBlock(kernel=3, double_reduction=True)(l)
 
     # Sortie
-    end_alpha_decoder = ConvBNRelu(depth=3, kernel=3, name="conv_out_alpha")(l)
+    end_alpha_decoder = ConvBNRelu(depth=16, kernel=3, name="conv_out_alpha")(l)
 
     ########################
     ### Propagation Unit ###
@@ -367,7 +367,7 @@ def get_model(img_size, depth=32):
     observers.append(Model(inputs, alpha, name="alpha_trivial"))
 
     alpha_and_memory = Concatenate(axis=-1)([alpha, memory])
-    for k in range(2):
+    for k in range(3):
         alpha_and_memory = prop([inputs, trimap, alpha_and_memory, unknown_region])
         alpha = Lambda(lambda x : tf.slice(x, [0,0,0,0],[-1, -1, -1, 1]))(alpha_and_memory)
         observers.append(Model(inputs, alpha, name=f"refined_alpha_{k+1}"))
