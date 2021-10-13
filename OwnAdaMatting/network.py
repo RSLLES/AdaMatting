@@ -353,13 +353,13 @@ def get_model(img_size, depth=32):
     l = DecoderBlock(kernel=3, double_reduction=True)(l)
 
     # Sortie
-    end_alpha_decoder = ConvBNRelu(depth=3, kernel=3, name="conv_out_alpha")(l)
+    end_alpha_decoder = ConvBNRelu(depth=10, kernel=3, name="conv_out_alpha")(l)
 
     ########################
     ### Propagation Unit ###
     ########################
 
-    prop = PropagationUnit(depth_alpha = 1, depth_memory = 3)
+    prop = PropagationUnit(depth_alpha = 1, depth_memory = 10)
     alpha = TrimapToTrivialAlpha()(trimap)
     memory = end_alpha_decoder
     unknown_region = GetUnknownRegionsMap()(alpha)

@@ -82,9 +82,6 @@ class DeepDataset:
         fg = tf.slice(fg_and_alpha, [0,0,0], [-1,-1,3])
         gt_alpha = tf.slice(fg_and_alpha, [0,0,3], [-1,-1,1])
 
-        # Rescale bg
-        bg = tf.image.resize(bg, tf.shape(fg)[:2])
-
         # Pick a grey pixel and center around it
         trimap_bg = tf.cast(gt_alpha <= 0.01, dtype="float32")
         trimap_fg = tf.cast(gt_alpha >= 0.99, dtype="float32")
@@ -92,37 +89,53 @@ class DeepDataset:
         unknown_zone = tf.reshape(unknown_zone, [1, tf.shape(unknown_zone)[0]*tf.shape(unknown_zone)[1]])
         rand_pixel_flatten = tf.squeeze(tf.cast(tf.random.categorical(tf.math.log(unknown_zone), 1), dtype="int32"))
         rand_pixel = tf.stack([
-            tf.math.floormod(rand_pixel_flatten, tf.shape(gt_alpha)[1]),
-            tf.cast(tf.math.divide(rand_pixel_flatten, tf.shape(gt_alpha)[1]), dtype="int32")
+            tf.cast(tf.math.divide(rand_pixel_flatten, tf.shape(gt_alpha)[1]), dtype="int32"),
+            tf.math.floormod(rand_pixel_flatten, tf.shape(gt_alpha)[1])
             ])
         rand_pixel = tf.clip_by_value(
             rand_pixel, 
             clip_value_min = self._padding_window, 
-            clip_value_max = tf.roll(tf.shape(gt_alpha)[:2], shift=1, axis=0) - self._padding_window)
-
-        # Deplacement
-        center = tf.cast(tf.stack([
-            tf.math.divide(tf.shape(gt_alpha)[1], 2),
-            tf.math.divide(tf.shape(gt_alpha)[0], 2),
-        ]), dtype="int32")
-        depl = center - rand_pixel
-
-        fg = tfa.image.translate_xy(fg, depl, replace=0)
-        gt_alpha = tf.repeat(gt_alpha, repeats=3, axis=-1)
-        gt_alpha = tfa.image.translate_xy(gt_alpha, depl, replace=0)
+            clip_value_max = tf.shape(gt_alpha)[:2] - self._padding_window)
 
         # Crop and resize
         croping_size = self._sizes_crop[
             tf.squeeze(tf.random.categorical(tf.math.log(self._sizes_crop_proba), 1))
         ]
-        ratio = tf.clip_by_value(croping_size[0]/tf.shape(fg)[0], 0.01, 0.99)
-        fg = tf.image.central_crop(fg, ratio)
-        gt_alpha = tf.image.central_crop(gt_alpha, ratio)
-        bg = tf.image.central_crop(bg, ratio)
+        
+        # Adjusting foreground
+        half = tf.cast(tf.math.divide(croping_size, 2), dtype="int32")
+        d_hg = -tf.clip_by_value(rand_pixel - half, -10000, 0)
+        d_bd = -tf.clip_by_value(tf.shape(fg)[:2] - rand_pixel - half, -10000, 0)
 
-        fg = tf.image.resize(fg, self._size_tf)
-        bg = tf.image.resize(bg, self._size_tf)
-        gt_alpha = tf.image.resize(gt_alpha, self._size_tf)
+        fg = tf.image.pad_to_bounding_box(
+            fg, 
+            d_hg[0], 
+            d_hg[1], 
+            tf.shape(fg)[0] + d_bd[0] + d_hg[0], 
+            tf.shape(fg)[1] + d_bd[1] + d_hg[1])
+
+        fg = tf.image.crop_to_bounding_box(
+            fg, 
+            rand_pixel[0] + d_hg[0] - half[0], 
+            rand_pixel[1] + d_hg[1] - half[1], 
+            croping_size[0], 
+            croping_size[1])
+
+        gt_alpha = tf.image.pad_to_bounding_box(
+            gt_alpha, 
+            d_hg[0], 
+            d_hg[1], 
+            tf.shape(gt_alpha)[0] + d_bd[0] + d_hg[0], 
+            tf.shape(gt_alpha)[1] + d_bd[1] + d_hg[1])
+
+        gt_alpha = tf.image.crop_to_bounding_box(
+            gt_alpha, 
+            rand_pixel[0] + d_hg[0] - half[0], 
+            rand_pixel[1] + d_hg[1] - half[1], 
+            croping_size[0], 
+            croping_size[1])
+        
+        bg = tf.image.resize(bg, croping_size)
 
         # Patch
         img = fg*gt_alpha + bg*(1.0-gt_alpha)
@@ -134,14 +147,18 @@ class DeepDataset:
         # img = tf.image.random_hue(img, 0.)
         img = tf.clip_by_value(img, 0.0, 1.0)
 
+        # Reduce
+        img = tf.image.resize(img, self._size_tf[:2])
+        gt_alpha = tf.image.resize(gt_alpha, self._size_tf[:2])
+
         # Expand Alpha
         gt_alpha = tf.expand_dims(tf.slice(gt_alpha, [0,0,0], [-1,-1,1]), axis=0)
 
         # Ground Truth Trimap
         @tf.function
         def build_gt_trimap(gt_alpha):
-            trimap_bg = tf.cast(gt_alpha <= 0.1, dtype="float32")
-            trimap_fg = tf.cast(gt_alpha >= 0.95, dtype="float32")
+            trimap_bg = tf.cast(gt_alpha <= 0.01, dtype="float32")
+            trimap_fg = tf.cast(gt_alpha >= 0.99, dtype="float32")
             trimap_uk = 1.0 - trimap_bg - trimap_fg + trimap_bg*trimap_fg
             return tf.concat([trimap_bg, trimap_uk, trimap_fg], axis=-1)
 
