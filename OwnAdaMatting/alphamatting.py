@@ -16,24 +16,25 @@ import matplotlib.pyplot as plt
 ### Parametres ###
 ##################
 
-weights = "10-04_17h59/10-05_10h07.h5"
+weights = "10-05_14h41/10-11_09h41.h5"
 
 path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/"
 path_alphamatting = "/net/homes/r/rseailles/Deep/Alphamatting/"
 
-reduct_factor = 4
+reduct_factor = 2
 
 ############
 ### Code ###
 ############
 
-m, _ = get_model(None, depth=16)
+depth=32
+m, _ = get_model(None, depth=depth)
 m.load_weights(join(path_weights, weights))
 
 for file in tqdm(listdir(join(path_alphamatting, "images/"))):
     def open_img (folder):
         img = tf.image.convert_image_dtype(tf.image.decode_image(tf.io.read_file(join(path_alphamatting, folder, file))), dtype="float32")
-        x,y = int(img.shape[0]/(16*reduct_factor))*16, int(img.shape[1]/(16*reduct_factor))*16
+        x,y = int(img.shape[0]/(depth*reduct_factor))*depth, int(img.shape[1]/(depth*reduct_factor))*depth
         # x,y = 512, 512
         img = tf.image.resize(img, (x, y))
         return img

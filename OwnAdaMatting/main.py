@@ -3,12 +3,17 @@ import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 # os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
 
+# import matplotlib
+# matplotlib.use('TkAgg')
+# import matplotlib.pyplot as plt
+
 from os.path import join
 from tqdm import tqdm
 from datetime import datetime
 from time import time
 
 import tensorflow as tf
+# tf.data.experimental.enable_debug_mode()
 from tensorflow.keras.optimizers import Adam
 
 # physical_devices = tf.config.list_physical_devices("GPU")
@@ -17,9 +22,9 @@ from tensorflow.keras.optimizers import Adam
 # from keras.utils.vis_utils import plot_model
 
 from network import get_model
-from loss import AlternateLoss, MultiTaskLoss, AlphaLoss, AdaptiveTrimapLoss
-from dataset import LiveComputedDataset
-from utils import classic_grid, observer_grid, val_grid, plot_to_image, generate_graph
+from loss import MultiTaskLoss, AlphaLoss, AdaptiveTrimapLoss
+from dataset import LiveComputedDataset, DeepDataset
+from utils import classic_grid, observer_grid, plot_to_image, generate_graph
 
 mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 
@@ -28,9 +33,10 @@ mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 ### VARIABLES ###
 #################
 
-img_size = (19*16, 19*16)
-batch_size = 8
-PERIOD_TEST = 60*5 # Temps en seconde entre chaque test
+size = 10
+img_size = (size*32, size*32)
+batch_size = 5
+PERIOD_TEST = 60*1 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
@@ -45,9 +51,10 @@ while not succeed:
         log_dir = f'OwnAdaMatting/logs/{date}/'
         save_dir = f'OwnAdaMatting/saves/{date}/'
  
-        df = LiveComputedDataset("picky", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
-        model, observers = get_model(img_size=img_size, depth=16)
-        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-01_19h18/10-04_10h08.h5")
+        # df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
+        df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, img_size=img_size, size_dividor=32, max_size_factor=3)
+        model, observers = get_model(img_size=img_size, depth=32)
+        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-05_14h41/10-11_09h41.h5")
         opt = Adam(learning_rate=0.001)
         
         loss_alpha_func = AlphaLoss()
@@ -59,7 +66,6 @@ while not succeed:
         ###################
         train_writer = tf.summary.create_file_writer(join(log_dir, f"train/"))
         test_writer = tf.summary.create_file_writer(join(log_dir, f"test/"))
-        val_writer = tf.summary.create_file_writer(join(log_dir, f"val/"))
         
         # Graph
         generate_graph(test_writer, model)
@@ -129,10 +135,6 @@ while not succeed:
                     tf.summary.image("Test Set", plot_to_image(fig_classic), step=test_index)
                     fig_observers = observer_grid(df._ds_test, df._n_images, observers)
                     tf.summary.image("Observations", plot_to_image(fig_observers), step=test_index)
-                
-                # with val_writer.as_default():
-                #     fig_val = val_grid(df._ds_val, 8, model)
-                #     tf.summary.image("Validation Set", plot_to_image(fig_val), step=test_index)
 
                 test_index+=1
 
