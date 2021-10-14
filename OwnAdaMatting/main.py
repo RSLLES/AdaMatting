@@ -36,7 +36,7 @@ mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 size = 10
 img_size = (size*32, size*32)
 batch_size = 5
-PERIOD_TEST = 60*1 # Temps en seconde entre chaque test
+PERIOD_TEST = 60*10 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
@@ -54,7 +54,7 @@ while not succeed:
         # df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, img_size=img_size, size_dividor=32, max_size_factor=3)
         model, observers = get_model(img_size=img_size, depth=32)
-        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-05_14h41/10-11_09h41.h5")
+        model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-13_19h51/10-13_21h12.h5")
         opt = Adam(learning_rate=0.001)
         
         loss_alpha_func = AlphaLoss()
@@ -80,7 +80,6 @@ while not succeed:
             epoch+=1
             progress_bar = tqdm(df._ds_train, desc=f"epoch={epoch}")
 
-            Loss_alpha, Loss_trimap, Loss, S1, S2 = [],[],[],[],[]
             for x_batch, y_batch in progress_bar:
                 with tf.GradientTape() as tape:
                     y_pred = model(x_batch, training=True)
@@ -92,56 +91,54 @@ while not succeed:
                 gradients = tape.gradient(loss, model.trainable_weights)
                 opt.apply_gradients(zip(gradients, model.trainable_weights))
 
-                Loss_alpha.append(loss_alpha.numpy())
-                Loss_trimap.append(loss_trimap.numpy())
-                Loss.append(loss.numpy())
-                S1.append(tf.exp(0.5*model.layers[-1].kernel[0]).numpy()[0])
-                S2.append(tf.exp(0.5*model.layers[-1].kernel[1]).numpy()[0])
+                s1 = tf.exp(0.5*model.layers[-1].kernel[0]).numpy()[0]
+                s2 = tf.exp(0.5*model.layers[-1].kernel[1]).numpy()[0]
 
-            # Logging training data
-            with train_writer.as_default():
-                tf.summary.scalar("AlphaLoss", mean(Loss_alpha), step=epoch)
-                tf.summary.scalar("TrimapLoss", mean(Loss_trimap), step=epoch)
-                tf.summary.scalar("MultiTaskLoss", mean(Loss), step=epoch)
-                tf.summary.scalar("S1", mean(S1), step=epoch)
-                tf.summary.scalar("S2", mean(S2), step=epoch)
+                # Logging training data
+                with train_writer.as_default():
+                    tf.summary.scalar("AlphaLoss", loss_alpha, step=i)
+                    tf.summary.scalar("TrimapLoss", loss_trimap, step=i)
+                    tf.summary.scalar("MultiTaskLoss", loss, step=i)
+                    tf.summary.scalar("S1", s1, step=i)
+                    tf.summary.scalar("S2", s2, step=i)
+                    i+=1
 
-            #  Logging testing and images
-            if time() - last_test > PERIOD_TEST:
+                #  Logging testing and images
+                if time() - last_test > PERIOD_TEST:
 
-                if not os.path.exists(save_dir):
-                    os.mkdir(save_dir)
-    
-                model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
-                last_test = time()
-                
-                Loss_alpha, Loss_trimap, Loss = [],[],[]
-                for x_batch, y_batch in tqdm(df._ds_test, desc="TEST"):
-                    y_pred = model(x_batch, training=True)
-                    loss_alpha = loss_alpha_func(y_batch, y_pred)
-                    loss_trimap = loss_trimap_func(y_batch, y_pred)
-                    loss = loss_multitask_func(y_batch, y_pred, loss_trimap, loss_alpha)
+                    if not os.path.exists(save_dir):
+                        os.mkdir(save_dir)
+        
+                    model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
+                    last_test = time()
+                    
+                    Loss_alpha, Loss_trimap, Loss = [],[],[]
+                    for x_batch, y_batch in tqdm(df._ds_test, desc="TEST"):
+                        y_pred = model(x_batch, training=True)
+                        loss_alpha = loss_alpha_func(y_batch, y_pred)
+                        loss_trimap = loss_trimap_func(y_batch, y_pred)
+                        loss = loss_multitask_func(y_batch, y_pred, loss_trimap, loss_alpha)
 
-                    Loss_alpha.append(loss_alpha.numpy())
-                    Loss_trimap.append(loss_trimap.numpy())
-                    Loss.append(loss.numpy())
+                        Loss_alpha.append(loss_alpha.numpy())
+                        Loss_trimap.append(loss_trimap.numpy())
+                        Loss.append(loss.numpy())
 
-                with test_writer.as_default():
-                    tf.summary.scalar("AlphaLoss", mean(Loss_alpha), step=epoch)
-                    tf.summary.scalar("TrimapLoss", mean(Loss_trimap), step=epoch)
-                    tf.summary.scalar("MultiTaskLoss", mean(Loss), step=epoch)
+                    with test_writer.as_default():
+                        tf.summary.scalar("AlphaLoss", mean(Loss_alpha), step=i)
+                        tf.summary.scalar("TrimapLoss", mean(Loss_trimap), step=i)
+                        tf.summary.scalar("MultiTaskLoss", mean(Loss), step=i)
 
-                    fig_classic = classic_grid(df._ds_test, df._n_images, model)
-                    tf.summary.image("Test Set", plot_to_image(fig_classic), step=test_index)
-                    fig_observers = observer_grid(df._ds_test, df._n_images, observers)
-                    tf.summary.image("Observations", plot_to_image(fig_observers), step=test_index)
+                        fig_classic = classic_grid(df._ds_test, df._n_images, model)
+                        tf.summary.image("Test Set", plot_to_image(fig_classic), step=test_index)
+                        fig_observers = observer_grid(df._ds_test, df._n_images, observers)
+                        tf.summary.image("Observations", plot_to_image(fig_observers), step=test_index)
 
-                test_index+=1
+                    test_index+=1
 
             # Logging profiler info
-            if epoch == 5:
+            if epoch == 1:
                 tf.profiler.experimental.start(join(log_dir, "profiler/"))
-            if epoch == 10:
+            if epoch == 2:
                 tf.profiler.experimental.stop()
         
         succeed = True
