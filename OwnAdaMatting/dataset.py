@@ -21,6 +21,7 @@ class DeepDataset:
         self._sizes_crop = tf.constant([[self._size_dividor*k, self._size_dividor*k] for k in range(self._min_size_factor, self._max_size_factor+1)], dtype="int32")
         self._sizes_crop_proba = tf.expand_dims(tf.constant([1/k for k in range(self._min_size_factor, self._max_size_factor+1)], dtype="float32"), axis=0)
         self._batch_size = batch_size
+        self._n_images = 5
 
         assert isfile(join(dataset_folder, "train.csv")) and isfile(join(dataset_folder, "test.csv"))
         self._dataset_folder = dataset_folder
@@ -48,8 +49,7 @@ class DeepDataset:
             column_names=["fg", "alpha", "bg"],
             batch_size=1,
             header=False,
-            num_epochs=1)
-            # num_epochs=1).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
+            num_epochs=1).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
 
         self._ds_test_files = tf.data.experimental.make_csv_dataset(
             self._test_csv, 
