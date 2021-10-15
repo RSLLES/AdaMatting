@@ -54,8 +54,8 @@ while not succeed:
         # df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, img_size=img_size, size_dividor=32, max_size_factor=3)
         model, observers = get_model(img_size=img_size, depth=32)
-        model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-14_13h26/10-14_16h07.h5")
-        opt = Adam(learning_rate=0.00001)
+        model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-15_09h17/10-15_09h37.h5")
+        opt = Adam(learning_rate=0.0001)
         
         loss_alpha_func = AlphaLoss()
         loss_trimap_func = AdaptiveTrimapLoss()
