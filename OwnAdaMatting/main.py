@@ -54,7 +54,7 @@ while not succeed:
         # df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, img_size=img_size, size_dividor=32, max_size_factor=3)
         _ , _, model, observers = get_model(depth=32)
-        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-18_12h17/10-18_12h32.h5")
+        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-18_14h55/10-18_15h02.h5")
         opt = Adam(learning_rate=0.0001)
         
         loss_alpha_func = AlphaLoss()
@@ -99,7 +99,6 @@ while not succeed:
                         os.mkdir(save_dir)
         
                     model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
-                    last_test = time()
                     
                     Loss_trimap= []
                     for x_batch, y_batch in tqdm(df._ds_test, desc="TEST"):
@@ -114,6 +113,7 @@ while not succeed:
                         tf.summary.image("Test Set", plot_to_image(fig_classic), step=test_index)
 
                     test_index+=1
+                    last_test = time()
 
             # Logging profiler info
             # if epoch == 1:
