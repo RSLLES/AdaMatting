@@ -56,7 +56,7 @@ def classic_grid(df, n, model):
         for i, title, d in zip(
                                 range(nb_categories), 
                                 ["Patched Image", "User's trimap input", "Refined Trimap", "Ground Truth Trimap"],
-                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0][0,:,:,:], y[0,:,:,0:3]]
+                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0,:,:,:], y[0,:,:,0:3]]
                             ):
             axs[row, i].imshow(d)
             axs[row, i].axis("off")
