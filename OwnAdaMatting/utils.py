@@ -43,7 +43,7 @@ def plot_to_image(figure):
 
 
 def classic_grid(df, n, model):
-    nb_categories = 7
+    nb_categories = 4
 
     fig, axs = plt.subplots(n, nb_categories)
     scale_img = 3
@@ -53,20 +53,10 @@ def classic_grid(df, n, model):
         x, y = data
         out = model.predict(x)
 
-        background = tf.concat([
-            tf.ones(shape=out[1].shape),
-            tf.ones(shape=out[1].shape),
-            tf.zeros(shape=out[1].shape)
-        ], axis=-1)
-
-        alpha = tf.repeat(tf.clip_by_value(out[1], 0.0, 1.0), 3, axis=-1)
-        pred_alpha = tf.repeat(tf.clip_by_value(y[:,:,:,3:4], 0.0, 1.0), 3, axis=-1)
-        composed = x[:,:,:,0:3]*alpha  + background*(1.0-alpha)
-
         for i, title, d in zip(
                                 range(nb_categories), 
-                                ["Patched Image", "User's trimap input", "Refined Trimap", "Ground Truth Trimap", "Refined Alpha", "Ground Truth Alpha", "Composed"],
-                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0][0,:,:,:], y[0,:,:,0:3], alpha[0,:,:,:], pred_alpha[0,:,:,:], composed[0,:,:,:]]
+                                ["Patched Image", "User's trimap input", "Refined Trimap", "Ground Truth Trimap"],
+                                [x[0,:,:,0:3], x[0,:,:,3:6], out[0][0,:,:,:], y[0,:,:,0:3]]
                             ):
             axs[row, i].imshow(d)
             axs[row, i].axis("off")

@@ -97,6 +97,7 @@ class DecoderBlock (Layer):
     def build(self, input_shape):
         self.internal = [
             ConvBNRelu(kernel=self.kernel, stride=1),
+            ConvBNRelu(kernel=self.kernel, stride=1),
             SubPixelConv(double_reduction=self.double_reduction)
         ]
 
@@ -287,7 +288,6 @@ class Weights(Layer):
 
 # Il y a 3 divisions : il faut donc que img size soit un multiple de 8
 def get_model(img_size, depth=32):
-
     observers = []
 
     ##############
@@ -304,15 +304,15 @@ def get_model(img_size, depth=32):
     l = ConvBNRelu(depth=depth*2, kernel=3, stride=1, name="")(l)
     l = MaxPooling2D(pool_size=3, strides=2, padding="same", name="")(l)
 
-    # l = ResBlock(downsample=False)(l)
+    l = ResBlock(downsample=False)(l)
     shallow_cut = l
     l = ResBlock(downsample=True)(l)
 
-    # l = ResBlock(downsample=False)(l)
+    l = ResBlock(downsample=False)(l)
     middle_cut = l
     l = ResBlock(downsample=True)(l)
     
-    # l = ResBlock(downsample=False)(l)
+    l = ResBlock(downsample=False)(l)
     deep_cut = l
     end_encoder = ResBlock(downsample=True)(l)
 
@@ -336,6 +336,8 @@ def get_model(img_size, depth=32):
     l = Conv2D(3, kernel_size=3, padding="same", name="conv_out_trimap")(l)
     # ArgMax = Layer(lambda x : tf.cast(tf.argsort(x, axis=-1, direction="DESCENDING") == 0, dtype="float32"))
     trimap = Softmax(axis=-1)(l)
+
+    m_trimap_only = Model(inputs=inputs, outputs=trimap, name="trimap_decoder")
 
     #####################
     ### Decoder Alpha ###
@@ -377,4 +379,6 @@ def get_model(img_size, depth=32):
     #########################
     
     loss_weights = Weights(output_dim=(2,1), initial_value=tf.math.log(4.0).numpy())(inputs)
-    return Model(inputs=inputs, outputs=[trimap, alpha, loss_weights], name="trimap_decoder"), observers
+    m = Model(inputs=inputs, outputs=[trimap, alpha], name="adamatting")
+    m_training = Model(inputs=inputs, outputs=[trimap, alpha, loss_weights], name="adamatting_training")
+    return m_training, m, m_trimap_only, observers
