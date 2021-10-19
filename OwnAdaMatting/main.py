@@ -33,10 +33,10 @@ mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 ### VARIABLES ###
 #################
 
-size = 10
+size = 7
 img_size = (size*32, size*32)
-batch_size = 10
-PERIOD_TEST = 60*7 # Temps en seconde entre chaque test
+batch_size = 7
+PERIOD_TEST = 60*15 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
@@ -46,15 +46,13 @@ last_test = time()
 succeed = False
 while not succeed:
     try:
-        date = datetime.now().strftime("%m-%d_%Hh%M")
-        print(date)
-        log_dir = f'OwnAdaMatting/logs/{date}/'
-        save_dir = f'OwnAdaMatting/saves/{date}/'
  
         # df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, img_size=img_size, size_dividor=32, max_size_factor=3)
-        _ , _, model, observers = get_model(depth=32)
-        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-18_14h55/10-18_15h02.h5")
+        m_training , _, m_trimap, observers = get_model(depth=32)
+        m_trimap.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-18_15h10/10-19_12h54.h5")
+        m_trimap.trainable = False
+
         opt = Adam(learning_rate=0.0001)
         
         loss_alpha_func = AlphaLoss()
@@ -64,11 +62,15 @@ while not succeed:
         ###################
         ### TENSORBOARD ###
         ###################
+        date = datetime.now().strftime("%m-%d_%Hh%M")
+        print(date)
+        log_dir = f'OwnAdaMatting/logs/{date}/'
+        save_dir = f'OwnAdaMatting/saves/{date}/'
         train_writer = tf.summary.create_file_writer(join(log_dir, f"train/"))
         test_writer = tf.summary.create_file_writer(join(log_dir, f"test/"))
         
         # Graph
-        generate_graph(test_writer, model)
+        generate_graph(test_writer, m_training)
 
         #####################
         ### TRAINING LOOP ###
@@ -82,17 +84,17 @@ while not succeed:
 
             for x_batch, y_batch in progress_bar:
                 with tf.GradientTape() as tape:
-                    y_pred = model(x_batch, training=True)
+                    y_pred = m_training(x_batch, training=True)
                     # Calcul des loss
                     loss_alpha = loss_alpha_func(y_batch, y_pred)
                     loss_trimap = loss_trimap_func(y_batch, y_pred)
                     loss = loss_multitask_func(y_batch, y_pred, loss_trimap, loss_alpha)
                     
-                gradients = tape.gradient(loss, model.trainable_weights)
-                opt.apply_gradients(zip(gradients, model.trainable_weights))
+                gradients = tape.gradient(loss, m_training.trainable_weights)
+                opt.apply_gradients(zip(gradients, m_training.trainable_weights))
 
-                s1 = tf.exp(0.5*model.layers[-1].kernel[0]).numpy()[0]
-                s2 = tf.exp(0.5*model.layers[-1].kernel[1]).numpy()[0]
+                s1 = tf.exp(0.5*m_training.layers[-1].kernel[0]).numpy()[0]
+                s2 = tf.exp(0.5*m_training.layers[-1].kernel[1]).numpy()[0]
 
                 # Logging training data
                 with train_writer.as_default():
@@ -109,11 +111,11 @@ while not succeed:
                     if not os.path.exists(save_dir):
                         os.mkdir(save_dir)
         
-                    model.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
+                    m_training.save_weights(join(save_dir, datetime.now().strftime("%m-%d_%Hh%M") + ".h5"), save_format="h5")
                     
                     Loss_alpha, Loss_trimap, Loss = [],[],[]
                     for x_batch, y_batch in tqdm(df._ds_test, desc="TEST"):
-                        y_pred = model(x_batch, training=True)
+                        y_pred = m_training(x_batch, training=True)
                         loss_alpha = loss_alpha_func(y_batch, y_pred)
                         loss_trimap = loss_trimap_func(y_batch, y_pred)
                         loss = loss_multitask_func(y_batch, y_pred, loss_trimap, loss_alpha)
@@ -127,7 +129,7 @@ while not succeed:
                         tf.summary.scalar("TrimapLoss", mean(Loss_trimap), step=i)
                         tf.summary.scalar("MultiTaskLoss", mean(Loss), step=i)
 
-                        fig_classic = classic_grid(df._ds_test, df._n_images, model)
+                        fig_classic = classic_grid(df._ds_test, df._n_images, m_training)
                         tf.summary.image("Test Set", plot_to_image(fig_classic), step=test_index)
                         fig_observers = observer_grid(df._ds_test, df._n_images, observers)
                         tf.summary.image("Observations", plot_to_image(fig_observers), step=test_index)
