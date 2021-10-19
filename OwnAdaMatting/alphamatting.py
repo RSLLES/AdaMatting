@@ -16,12 +16,12 @@ import matplotlib.pyplot as plt
 ### Parametres ###
 ##################
 
-weights = "10-05_14h41/10-11_09h41.h5"
+weights = "10-15_12h15/10-18_09h08.h5"
 
 path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/"
 path_alphamatting = "/net/homes/r/rseailles/Deep/Alphamatting/"
 
-reduct_factor = 2
+reduct_factor = 8
 
 ############
 ### Code ###
