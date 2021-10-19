@@ -50,7 +50,7 @@ while not succeed:
         # df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, img_size=img_size, size_dividor=32, max_size_factor=3)
         _ , _, model, observers = get_model(depth=32)
-        # model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-18_14h55/10-18_15h02.h5")
+        model.load_weights("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/10-18_15h10/10-19_12h54.h5")
         opt = Adam(learning_rate=0.0001)
         
         loss_alpha_func = AlphaLoss()

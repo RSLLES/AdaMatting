@@ -34,9 +34,9 @@ class DeepDataset:
                 [1, -8, 1],
                 [1,  1, 1]
             ], dtype="float32")*tf.constant((0.01), dtype="float32"), axis=-1), axis=-1)
-        self._heat_equation_size_alone = int(self._size/8)
+        self._heat_equation_size_alone = int(self._size/4)
         self._heat_equation_size = tf.constant([self._heat_equation_size_alone, self._heat_equation_size_alone], dtype="int32")
-        self._nb_iterations = 30
+        self._nb_iterations = 50
 
         self._padding_cst = 8
         self._central_crop = 1 - self._padding_cst*8/self._size
@@ -201,8 +201,8 @@ class DeepDataset:
 
         u = solve_heat_eq(u_ori)
         nuage = tfa.image.gaussian_filter2d(
-            image = tf.clip_by_value(tf.random.normal((16, 16, 1), mean=0.5, stddev=0.6), 0.0, 1.0),
-            filter_shape = 5,
+            image = tf.clip_by_value(tf.random.normal((32, 32, 1), mean=0.5, stddev=0.6), 0.0, 1.0),
+            filter_shape = 10,
             sigma = 2.0
         )
 
