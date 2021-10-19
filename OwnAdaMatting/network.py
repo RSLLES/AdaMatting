@@ -315,7 +315,7 @@ def get_model(depth=32):
     ##############
     ### Entree ###
     ##############
-    inputs = Input(shape = (320, 320, 6), name="input")
+    inputs = Input(shape = (None, None, 6), name="input")
     
     ###############
     ### Encoder ###
@@ -391,7 +391,7 @@ def get_model(depth=32):
     observers.append(Model(inputs, alpha, name="alpha_trivial"))
 
     alpha_and_memory = Concatenate(axis=-1)([alpha, memory])
-    for k in range(5):
+    for k in range(3):
         alpha_and_memory = prop([inputs, trimap, alpha_and_memory, unknown_region])
         alpha = Lambda(lambda x : tf.slice(x, [0,0,0,0],[-1, -1, -1, 1]))(alpha_and_memory)
         observers.append(Model(inputs, alpha, name=f"refined_alpha_{k+1}"))

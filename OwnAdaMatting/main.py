@@ -33,10 +33,10 @@ mean = lambda L : sum(L)/len(L) if len(L) > 0 else -1
 ### VARIABLES ###
 #################
 
-size = 10
+size = 7
 img_size = (size*32, size*32)
-batch_size = 10
-PERIOD_TEST = 60*7 # Temps en seconde entre chaque test
+batch_size = 7
+PERIOD_TEST = 60*15 # Temps en seconde entre chaque test
 last_test = time()
 
 ###################
@@ -46,10 +46,6 @@ last_test = time()
 succeed = False
 while not succeed:
     try:
-        date = datetime.now().strftime("%m-%d_%Hh%M")
-        print(date)
-        log_dir = f'OwnAdaMatting/logs/{date}/'
-        save_dir = f'OwnAdaMatting/saves/{date}/'
  
         # df = LiveComputedDataset("all_files", "/net/rnd/DEV/Datasets_DL/alpha_matting/", img_size=img_size, batch_size=batch_size)
         df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, img_size=img_size, size_dividor=32, max_size_factor=3)
@@ -64,6 +60,10 @@ while not succeed:
         ###################
         ### TENSORBOARD ###
         ###################
+        date = datetime.now().strftime("%m-%d_%Hh%M")
+        print(date)
+        log_dir = f'OwnAdaMatting/logs/{date}/'
+        save_dir = f'OwnAdaMatting/saves/{date}/'
         train_writer = tf.summary.create_file_writer(join(log_dir, f"train/"))
         test_writer = tf.summary.create_file_writer(join(log_dir, f"test/"))
         
@@ -95,6 +95,7 @@ while not succeed:
 
                 #  Logging testing and images
                 if time() - last_test > PERIOD_TEST:
+
                     if not os.path.exists(save_dir):
                         os.mkdir(save_dir)
         

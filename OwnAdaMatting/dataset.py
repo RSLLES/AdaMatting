@@ -33,10 +33,10 @@ class DeepDataset:
                 [1,  1, 1],
                 [1, -8, 1],
                 [1,  1, 1]
-            ], dtype="float32")*tf.constant((0.05), dtype="float32"), axis=-1), axis=-1)
+            ], dtype="float32")*tf.constant((0.01), dtype="float32"), axis=-1), axis=-1)
         self._heat_equation_size_alone = int(self._size/8)
         self._heat_equation_size = tf.constant([self._heat_equation_size_alone, self._heat_equation_size_alone], dtype="int32")
-        self._nb_iterations = 20
+        self._nb_iterations = 30
 
         self._padding_cst = 8
         self._central_crop = 1 - self._padding_cst*8/self._size
@@ -53,13 +53,15 @@ class DeepDataset:
             self._ds_train = self._ds_train_files.map(lambda x : self.preprocess(x), num_parallel_calls = self._autotune).batch(batch_size).prefetch(self._autotune)
 
         if isfile(join(dataset_folder, "test.csv")):
+            with open(join(dataset_folder, "test.csv")) as f:
+                assert batch_size*self._n_images <= len(f.readlines())
             self._ds_test_files = tf.data.experimental.make_csv_dataset(
                 self._test_csv, 
                 column_names=["fg", "alpha", "bg"],
                 batch_size=1,
                 header=False,
                 num_epochs=1)
-            self._ds_test = self._ds_test_files.map(lambda x : self.preprocess(x), num_parallel_calls = self._autotune).batch(1).prefetch(self._autotune)
+            self._ds_test = self._ds_test_files.map(lambda x : self.preprocess(x), num_parallel_calls = self._autotune).batch(batch_size).prefetch(self._autotune)
 
     
     def preprocess(self, line):
@@ -201,7 +203,7 @@ class DeepDataset:
         nuage = tfa.image.gaussian_filter2d(
             image = tf.clip_by_value(tf.random.normal((16, 16, 1), mean=0.5, stddev=0.6), 0.0, 1.0),
             filter_shape = 5,
-            sigma = 0.5
+            sigma = 2.0
         )
 
         u = tf.image.crop_to_bounding_box(u, self._padding_cst, self._padding_cst, self._heat_equation_size_alone, self._heat_equation_size_alone)
