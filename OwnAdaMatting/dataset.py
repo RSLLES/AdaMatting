@@ -23,7 +23,7 @@ class DeepDataset:
         self._batch_size = batch_size
         self._n_images = 5
 
-        assert isfile(join(dataset_folder, "train.csv")) and isfile(join(dataset_folder, "test.csv"))
+        assert isfile(join(dataset_folder, "train.csv")) or isfile(join(dataset_folder, "test.csv"))
         self._dataset_folder = dataset_folder
         self._train_csv = join(dataset_folder, "train.csv")
         self._test_csv = join(dataset_folder, "test.csv")
@@ -36,30 +36,30 @@ class DeepDataset:
             ], dtype="float32")*tf.constant((0.05), dtype="float32"), axis=-1), axis=-1)
         self._heat_equation_size_alone = int(self._size/8)
         self._heat_equation_size = tf.constant([self._heat_equation_size_alone, self._heat_equation_size_alone], dtype="int32")
-        self._nb_iterations = 50
+        self._nb_iterations = 20
 
         self._padding_cst = 8
         self._central_crop = 1 - self._padding_cst*8/self._size
         self._padding_window = tf.constant([self._padding_cst, self._padding_cst])
 
         self._autotune = tf.data.experimental.AUTOTUNE
+        if isfile(join(dataset_folder, "train.csv")):
+            self._ds_train_files = tf.data.experimental.make_csv_dataset(
+                self._train_csv,
+                column_names=["fg", "alpha", "bg"],
+                batch_size=1,
+                header=False,
+                num_epochs=1).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
+            self._ds_train = self._ds_train_files.map(lambda x : self.preprocess(x), num_parallel_calls = self._autotune).batch(batch_size).prefetch(self._autotune)
 
-        self._ds_train_files = tf.data.experimental.make_csv_dataset(
-            self._train_csv,
-            column_names=["fg", "alpha", "bg"],
-            batch_size=1,
-            header=False,
-            num_epochs=1).shuffle(shuffle_buffer, reshuffle_each_iteration=True)
-
-        self._ds_test_files = tf.data.experimental.make_csv_dataset(
-            self._test_csv, 
-            column_names=["fg", "alpha", "bg"],
-            batch_size=1,
-            header=False,
-            num_epochs=1)
-
-        self._ds_train = self._ds_train_files.map(lambda x : self.preprocess(x), num_parallel_calls = self._autotune).batch(batch_size).prefetch(self._autotune)
-        self._ds_test = self._ds_test_files.map(lambda x : self.preprocess(x), num_parallel_calls = self._autotune).batch(1).prefetch(self._autotune)
+        if isfile(join(dataset_folder, "test.csv")):
+            self._ds_test_files = tf.data.experimental.make_csv_dataset(
+                self._test_csv, 
+                column_names=["fg", "alpha", "bg"],
+                batch_size=1,
+                header=False,
+                num_epochs=1)
+            self._ds_test = self._ds_test_files.map(lambda x : self.preprocess(x), num_parallel_calls = self._autotune).batch(1).prefetch(self._autotune)
 
     
     def preprocess(self, line):
@@ -72,9 +72,9 @@ class DeepDataset:
         gt_alpha = tf.slice(gt_alpha, [0,0,0], [-1, -1, 1]) # Safety
 
         # Angle and Flip
-        angle = tf.random.uniform(shape=[], minval=-0.1*3.1416, maxval=0.1*3.1416)
-        gt_alpha = tfa.image.rotate(gt_alpha, angle)
-        fg = tfa.image.rotate(fg, angle)
+        # angle = tf.random.uniform(shape=[], minval=-0.1*3.1416, maxval=0.1*3.1416)
+        # gt_alpha = tfa.image.rotate(gt_alpha, angle)
+        # fg = tfa.image.rotate(fg, angle)
 
         fg_and_alpha = tf.concat([fg, gt_alpha], axis=-1)
         fg_and_alpha = tf.image.random_flip_left_right(fg_and_alpha)

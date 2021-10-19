@@ -96,8 +96,32 @@ class DecoderBlock (Layer):
 
     def build(self, input_shape):
         self.internal = [
+            ResBlock(),
+            SubPixelConv(double_reduction=self.double_reduction),
+            ResBlock()
+        ]
+
+    def call(self, inputs, *args, **kwargs):
+        z = inputs
+        for layer in self.internal:
+            z = layer(z)
+        return z
+
+class CutBlock (Layer):
+    def __init__(self, kernel=3, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+        self.kernel = kernel
+        super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
+
+    def get_config(self):
+        base_config = super().get_config()
+        return {
+            **base_config,
+            "kernel" : self.kernel}
+
+    def build(self, input_shape):
+        self.internal = [
             ConvBNRelu(kernel=self.kernel, stride=1),
-            SubPixelConv(double_reduction=self.double_reduction)
+            ConvBNRelu(kernel=self.kernel, stride=1),
         ]
 
     def call(self, inputs, *args, **kwargs):
@@ -285,15 +309,13 @@ class Weights(Layer):
 ### MODEL GENERATION ###
 ########################
 
-# Il y a 3 divisions : il faut donc que img size soit un multiple de 8
-def get_model(img_size, depth=32):
-
+def get_model(depth=32):
     observers = []
 
     ##############
     ### Entree ###
     ##############
-    inputs = Input(shape = (None, None, 6), name="input")
+    inputs = Input(shape = (320, 320, 6), name="input")
     
     ###############
     ### Encoder ###
@@ -304,15 +326,15 @@ def get_model(img_size, depth=32):
     l = ConvBNRelu(depth=depth*2, kernel=3, stride=1, name="")(l)
     l = MaxPooling2D(pool_size=3, strides=2, padding="same", name="")(l)
 
-    # l = ResBlock(downsample=False)(l)
+    l = ResBlock(downsample=False)(l)
     shallow_cut = l
     l = ResBlock(downsample=True)(l)
 
-    # l = ResBlock(downsample=False)(l)
+    l = ResBlock(downsample=False)(l)
     middle_cut = l
     l = ResBlock(downsample=True)(l)
     
-    # l = ResBlock(downsample=False)(l)
+    l = ResBlock(downsample=False)(l)
     deep_cut = l
     end_encoder = ResBlock(downsample=True)(l)
 
@@ -322,13 +344,13 @@ def get_model(img_size, depth=32):
     ######################
 
     l = DecoderBlock(kernel=3, double_reduction=False)(end_encoder)
-    l = Concatenate()([l, deep_cut])
+    l = Add()([l, CutBlock(kernel=3)(deep_cut)])
 
-    l = DecoderBlock(kernel=3, double_reduction=True)(l)
-    l = Concatenate()([l, middle_cut])
+    l = DecoderBlock(kernel=3, double_reduction=False)(l)
+    l = Add()([l, CutBlock(kernel=3)(middle_cut)])
 
-    l = DecoderBlock(kernel=3, double_reduction=True)(l)
-    # l = Concatenate()([l, shallow_cut])
+    l = DecoderBlock(kernel=3, double_reduction=False)(l)
+    # l = Add()([l, CutBlock()(shallow_cut)])
 
     l = DecoderBlock(kernel=3, double_reduction=False)(l)
 
@@ -337,29 +359,31 @@ def get_model(img_size, depth=32):
     # ArgMax = Layer(lambda x : tf.cast(tf.argsort(x, axis=-1, direction="DESCENDING") == 0, dtype="float32"))
     trimap = Softmax(axis=-1)(l)
 
+    m_trimap_only = Model(inputs=inputs, outputs=trimap, name="trimap_decoder")
+
     #####################
     ### Decoder Alpha ###
     #####################
 
     l = DecoderBlock(kernel=3, double_reduction=False)(end_encoder)
-    # l = Concatenate()([l, deep_cut])
+    # l = Add()([l, CutBlock(kernel=3)(deep_cut)])
 
     l = DecoderBlock(kernel=3, double_reduction=False)(l)
-    l = Concatenate()([l, middle_cut])
+    l = Add()([l, CutBlock(kernel=3)(middle_cut)])
 
-    l = DecoderBlock(kernel=3, double_reduction=True)(l)
-    l = Concatenate()([l, shallow_cut])
+    l = DecoderBlock(kernel=3, double_reduction=False)(l)
+    l = Add()([l, CutBlock()(shallow_cut)])
 
-    l = DecoderBlock(kernel=3, double_reduction=True)(l)
+    l = DecoderBlock(kernel=3, double_reduction=False)(l)
 
     # Sortie
-    end_alpha_decoder = ConvBNRelu(depth=10, kernel=3, name="conv_out_alpha")(l)
+    end_alpha_decoder = ConvBNRelu(depth=depth, kernel=3, name="conv_out_alpha")(l)
 
     ########################
     ### Propagation Unit ###
     ########################
 
-    prop = PropagationUnit(depth_alpha = 1, depth_memory = 10)
+    prop = PropagationUnit(depth_alpha = 1, depth_memory = depth)
     alpha = TrimapToTrivialAlpha()(trimap)
     memory = end_alpha_decoder
     unknown_region = GetUnknownRegionsMap()(alpha)
@@ -367,7 +391,7 @@ def get_model(img_size, depth=32):
     observers.append(Model(inputs, alpha, name="alpha_trivial"))
 
     alpha_and_memory = Concatenate(axis=-1)([alpha, memory])
-    for k in range(3):
+    for k in range(5):
         alpha_and_memory = prop([inputs, trimap, alpha_and_memory, unknown_region])
         alpha = Lambda(lambda x : tf.slice(x, [0,0,0,0],[-1, -1, -1, 1]))(alpha_and_memory)
         observers.append(Model(inputs, alpha, name=f"refined_alpha_{k+1}"))
@@ -377,4 +401,6 @@ def get_model(img_size, depth=32):
     #########################
     
     loss_weights = Weights(output_dim=(2,1), initial_value=tf.math.log(4.0).numpy())(inputs)
-    return Model(inputs=inputs, outputs=[trimap, alpha, loss_weights], name="trimap_decoder"), observers
+    m = Model(inputs=inputs, outputs=[trimap, alpha], name="adamatting")
+    m_training = Model(inputs=inputs, outputs=[trimap, alpha, loss_weights], name="adamatting_training")
+    return m_training, m, m_trimap_only, observers
