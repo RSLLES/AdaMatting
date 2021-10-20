@@ -9,7 +9,7 @@ class AdaptiveTrimapLoss(Loss):
 
     def __call__(self, y_true, y_pred, sample_weight=None, eps=1e-6):
         gt_trimap = tf.slice(y_true, [0,0,0,0], [-1, -1, -1, 3])
-        trimap = y_pred
+        trimap, _, _ = y_pred
         return self.bce(y_true=gt_trimap, y_pred=trimap)
 
 class AlphaLoss(Loss):
