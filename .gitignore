@@ -1,10 +1,5 @@
 .vscode/
-machineLearningEnv/
-AdaMatting/
-OwnAdaMatting/logs/
-OwnAdaMatting/saves/
-OwnAdaMatting/archives/
-OwnAdaMatting/__pycache__/
-Alphamatting/
-AlphaMatting_GenTrimap/
-GCA-Matting/
+logs/
+saves/
+archives/
+__pycache__/
