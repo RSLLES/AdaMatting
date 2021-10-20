@@ -33,7 +33,7 @@ class DeepDataset:
                 [1,  1, 1],
                 [1, -8, 1],
                 [1,  1, 1]
-            ], dtype="float32")*tf.constant((0.01), dtype="float32"), axis=-1), axis=-1)
+            ], dtype="float32")*tf.constant((0.03), dtype="float32"), axis=-1), axis=-1)
         self._heat_equation_size_alone = int(self._size/4)
         self._heat_equation_size = tf.constant([self._heat_equation_size_alone, self._heat_equation_size_alone], dtype="int32")
         self._nb_iterations = 50
