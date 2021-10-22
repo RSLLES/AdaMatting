@@ -115,7 +115,7 @@ class FullAdaMatting(DefaultEngine):
             x_batch, y_batch = data
             x_batch = tf.slice(x_batch, [0,0,0,0],[1,-1,-1,-1])
             y_batch = tf.slice(y_batch, [0,0,0,0],[1,-1,-1,-1])
-            out_alpha, out_trimap, _ = self.model(x_batch, training=False)
+            out_trimap, out_alpha, _ = self.model(x_batch, training=False)
 
             img = tf.squeeze(tf.slice(x_batch, [0,0,0,0], [1, -1, -1, 3]), axis=0)
             in_trimap = tf.squeeze(tf.slice(x_batch, [0,0,0,3], [1, -1, -1, 3]), axis=0)
@@ -124,14 +124,14 @@ class FullAdaMatting(DefaultEngine):
             out_trimap = tf.squeeze(out_trimap, axis=0)
             out_alpha = tf.squeeze(out_alpha, axis=0)
 
-            gt_alpha = tf.repeat(tf.clip_by_values(gt_alpha, 0.0, 1.0), repeats=3, axis=-1)
-            out_alpha = tf.repeat(tf.clip_by_values(out_alpha, 0.0, 1.0), repeats=3, axis=-1)
-
             background = tf.concat([
                 tf.zeros(shape=out_alpha.shape),
                 tf.ones(shape=out_alpha.shape),
                 tf.zeros(shape=out_alpha.shape)
             ], axis=-1)
+
+            gt_alpha = tf.repeat(tf.clip_by_value(gt_alpha, 0.0, 1.0), repeats=3, axis=-1)
+            out_alpha = tf.repeat(tf.clip_by_value(out_alpha, 0.0, 1.0), repeats=3, axis=-1)
 
             composed = img*out_alpha + background*(1.0 - out_alpha)
 
@@ -141,7 +141,7 @@ class FullAdaMatting(DefaultEngine):
 
 
 if __name__ == "__main__":
-    size = 5
+    size = 7
     img_size = size*32
     batch_size = 5
     ds = DeepDataset(
