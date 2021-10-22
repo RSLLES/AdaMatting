@@ -161,9 +161,9 @@ class SubPixelConv (Layer):
         return (input_shape[0], input_shape[1]*2, input_shape[2]*2, int(self.depth/4))
 
 class PropagationUnit (Layer):
-    def __init__(self, depth_alpha, depth_memory, kernel=3, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
-        self.depth_alpha = depth_alpha
+    def __init__(self, depth_memory, nb_resblocks, kernel=3, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
         self.depth_memory = depth_memory
+        self.nb_resblocks = nb_resblocks
         self.kernel = kernel
         super().__init__(trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
 
@@ -172,58 +172,100 @@ class PropagationUnit (Layer):
         return {
             **base_config,
             "kernel" : self.kernel,
-            "depth_alpha" : self.depth_alpha,
-            "depth_memory" : self.depth_memory}
+            "depth_memory" : self.depth_memory,
+            "nb_resblocks" : self.nb_resblocks}
 
     def build(self, input_shape):
-        self.concatenate_img_trimap_alpha = Concatenate(axis=-1)
-        self.concatenate_hi = Concatenate(axis=-1)
-        self.concatenate_end = Concatenate(axis=-1)
+        super(PropagationUnit, self).build(input_shape)
+        self.standard_shape = (input_shape[0][1], input_shape[0][2], self.depth_memory)
 
-        self.preprocess_i = ResBlock(depth=self.depth_memory, kernel=7)
-        self.conv_gate = Conv2D(3*self.depth_memory, kernel_size=self.kernel, padding="same")
-        self.conv_output = Conv2D(self.depth_alpha, kernel_size=self.kernel, padding="same")
+        self.concat_x = Concatenate(axis=-1)
 
-        self.sigm = Activation("sigmoid")
-        self.activation = Activation("tanh")
+        self.preprocess = [
+            ResBlock(depth=self.depth_memory),
+            ResBlock(depth=self.depth_memory)
+        ]
+
+        build_standard_conv = lambda name : Conv2D(self.depth_memory, kernel_size=7, padding="same", use_bias=True, name=name)
+        build_standard_bn = lambda name : BatchNormalization(axis=-1, name=name)
+        build_standard_weight = lambda name : self.add_weight(name=name, shape=self.standard_shape, initializer="zeros")
+        build_standard_sigm = lambda name : Activation("sigmoid", name=name)
+        
+        self.conv_xi = build_standard_conv("conv_xi")
+        self.conv_ai = build_standard_conv("conv_ai")
+        self.W_mi = build_standard_weight("w_mi")
+        self.bn_xi = build_standard_bn("bn_xi")
+        self.bn_ai = build_standard_bn("bn_ai")
+        self.bn_mi = build_standard_bn("bn_mi")
+        self.sigm_i = build_standard_sigm("sigm_i")
+
+        self.conv_xf = build_standard_conv("conv_xf")
+        self.conv_af = build_standard_conv("conv_af")
+        self.W_mf = build_standard_weight("w_mf")
+        self.bn_xf = build_standard_bn("bn_xf")
+        self.bn_af = build_standard_bn("bn_af")
+        self.bn_mf = build_standard_bn("bn_mf")
+        self.sigm_f = build_standard_sigm("sigm_f")
+        
+        self.conv_xm = build_standard_conv("conv_xm")
+        self.conv_am = build_standard_conv("conv_am")
+        self.bn_xm = build_standard_bn("bn_xm")
+        self.bn_am = build_standard_bn("bn_am")
+
+        self.conv_xo = build_standard_conv("conv_xo")
+        self.conv_ao = build_standard_conv("conv_ao")
+        self.W_mo = build_standard_weight("w_mo")
+        self.bn_xo = build_standard_bn("bn_xo")
+        self.bn_ao = build_standard_bn("bn_ao")
+        self.bn_mo = build_standard_bn("bn_mo")
+        self.sigm_o = build_standard_sigm("sigm_o")
+        self.tanh = Activation("tanh", name="tanh")
+
+        self.conv_alpha = Conv2D(1, kernel_size=7, padding="same", use_bias=True, name="conv_alpha")
+        self.bn_alpha = build_standard_bn("bn_alpha")
+        self.sigm_alpha = build_standard_sigm("sigm_alpha")
+
+        self.concat_end = Concatenate(axis=-1, name="concat_end")
 
 
     def call(self, inputs, *args, **kwargs):
-        input_img_and_trimap, trimap, alpha_and_memory, mask = inputs
+        if len(inputs) == 4:
+            input_img_and_trimap, trimap, alpha, memory = inputs
+        else:
+            input_img_and_trimap, trimap, alpha = inputs
+            memory = tf.expand_dims(tf.zeros(shape=self.standard_shape), axis=0)
 
         # Remove user's trimap
         input_img = tf.slice(input_img_and_trimap, [0,0,0,0],[-1, -1, -1, 3])
-        alpha = tf.slice(alpha_and_memory, [0,0,0,0],[-1, -1, -1, self.depth_alpha])
-        memory = tf.slice(alpha_and_memory, [0,0,0,self.depth_alpha],[-1, -1, -1, self.depth_memory])
 
         # Preprocess
-        i = self.concatenate_img_trimap_alpha([input_img, trimap, alpha])
-        new_info = self.preprocess_i(i)
-
-        # Concatenate h and i
-        h = alpha
-        hi = self.concatenate_hi([h, i])
-
-        # Convolution and split into gates
-        res = self.conv_gate(hi)
-        forget_gate = self.sigm(tf.slice(res, [0,0,0,0*self.depth_memory], [-1, -1, -1, self.depth_memory]))
-        update_gate = self.sigm(tf.slice(res, [0,0,0,1*self.depth_memory], [-1, -1, -1, self.depth_memory]))
-        output_gate = self.sigm(tf.slice(res, [0,0,0,2*self.depth_memory], [-1, -1, -1, self.depth_memory]))
-
-        # New memory
-        new_memory = forget_gate*memory + update_gate*new_info
+        x = self.concat_x([input_img, trimap, alpha])
+        for k in range(self.nb_resblocks):
+            x = self.preprocess[k](x)
         
-        # Building new alpha
-        update = self.activation(self.conv_output(new_info*output_gate))
-        # new_alpha = alpha + mask*update
-        new_alpha = alpha + update
+        # Input Gate
+        i = self.bn_xi(self.conv_xi(x)) + self.bn_ai(self.conv_ai(alpha)) + self.bn_mi(tf.multiply(self.W_mi, memory))
+        i = self.sigm_i(i)
 
-        # Merging
-        return self.concatenate_end([new_alpha, new_memory])
+        # Forget Gate
+        f = self.bn_xf(self.conv_xf(x)) + self.bn_af(self.conv_af(alpha)) + self.bn_mf(tf.multiply(self.W_mf, memory))
+        f = self.sigm_f(f)
+
+        # Memory update
+        memory = f*memory + i*self.tanh(self.bn_xm(self.conv_xm(x)) + self.bn_am(self.conv_am(alpha)))
+
+        # Output gate 
+        o = self.bn_xo(self.conv_xo(x)) + self.bn_ao(self.conv_ao(alpha)) + self.bn_mo(tf.multiply(self.W_mo, memory))
+        o = self.sigm_o(o)
+
+        # Output
+        alpha = self.sigm_alpha(self.bn_alpha(self.conv_alpha(o*memory)))
+
+        return self.concat_end([alpha, memory])
 
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0], input_shape[1], input_shape[2], self.depth_alpha + self.depth_memory)
+        return (input_shape[0], input_shape[1], input_shape[2], 1 + self.depth_memory)
     
 class TrimapToTrivialAlpha (Layer):
     def __init__(self, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
@@ -309,13 +351,13 @@ class Weights(Layer):
 ### MODEL GENERATION ###
 ########################
 
-def get_model(depth=32):
+def get_model(depth=32, input_shape=(320, 320)):
     observers = []
 
     ##############
     ### Entree ###
     ##############
-    inputs = Input(shape = (None, None, 6), name="input")
+    inputs = Input(shape = (input_shape[0], input_shape[1], 6), name="input")
     
     ###############
     ### Encoder ###
@@ -377,23 +419,25 @@ def get_model(depth=32):
     l = DecoderBlock(kernel=3, double_reduction=False)(l)
 
     # Sortie
-    end_alpha_decoder = ConvBNRelu(depth=depth, kernel=3, name="conv_out_alpha")(l)
+    alpha = ConvBNRelu(depth=1, kernel=3, name="conv_out_alpha")(l)
 
     ########################
     ### Propagation Unit ###
     ########################
 
-    prop = PropagationUnit(depth_alpha = 1, depth_memory = depth)
-    alpha = TrimapToTrivialAlpha()(trimap)
-    memory = end_alpha_decoder
-    unknown_region = GetUnknownRegionsMap()(alpha)
+    depth_memory = depth
+    prop = PropagationUnit(nb_resblocks=2, depth_memory = depth_memory)
+    memory = None
     # observers.append(Model(inputs, unknown_region, name="mask"))
-    observers.append(Model(inputs, alpha, name="alpha_trivial"))
+    observers.append(Model(inputs, alpha, name="alpha_initial"))
 
-    alpha_and_memory = Concatenate(axis=-1)([alpha, memory])
     for k in range(3):
-        alpha_and_memory = prop([inputs, trimap, alpha_and_memory, unknown_region])
+        if memory is None:
+            alpha_and_memory = prop([inputs, trimap, alpha])
+        else:
+            alpha_and_memory = prop([inputs, trimap, alpha, memory])
         alpha = Lambda(lambda x : tf.slice(x, [0,0,0,0],[-1, -1, -1, 1]))(alpha_and_memory)
+        memory = Lambda(lambda x : tf.slice(x, [0,0,0,1],[-1, -1, -1, depth_memory]))(alpha_and_memory)
         observers.append(Model(inputs, alpha, name=f"refined_alpha_{k+1}"))
 
     #########################
