@@ -1,4 +1,3 @@
-from keras.engine import training
 import tensorflow as tf
 import tensorflow as tf
 
@@ -8,10 +7,13 @@ from dataset import DeepDataset
 from network import get_model
 
 class FullAdaMatting(DefaultEngine):
-    def __init__(self, dataset, depth, n_log_images, period_test, lr) -> None:
+    def __init__(self, input_shape, dataset, depth, n_log_images, period_test, learning_rate) -> None:
         """
         Train the complete version of the AdaMatting network
         Parameters :
+            - input_shape (int, int):
+            Size of the image
+
             - dataset (DeepDataset)
             Dataset to use
 
@@ -24,7 +26,7 @@ class FullAdaMatting(DefaultEngine):
             - period_test (float)
             Duration between two tests
 
-            - lr (float)
+            - learning_rate (float)
             Learning rate to use with Adam
 
         """ 
@@ -33,10 +35,10 @@ class FullAdaMatting(DefaultEngine):
             dataset=dataset,
             name=type(self).__name__,
             period_test=period_test,
-            lr = lr
+            lr=learning_rate
         )
 
-        self.model, _, _, _ = get_model(depth=depth)
+        self.model, _, _, _ = get_model(depth=depth, input_shape=input_shape)
         self.n_log_images = n_log_images
 
         self.loss_alpha_func = AlphaLoss()
@@ -139,17 +141,25 @@ class FullAdaMatting(DefaultEngine):
 
 
 if __name__ == "__main__":
-    size = 3
+    size = 5
     img_size = size*32
-    batch_size = 2
-    ds = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", batch_size=batch_size, squared_img_size=img_size, max_size_factor=3.0)
+    batch_size = 5
+    ds = DeepDataset(
+        "/net/rnd/DEV/Datasets_DL/alpha_matting/deep38/", 
+        batch_size=batch_size, 
+        squared_img_size=img_size,
+        max_size_factor=3.0
+    )
+
     network = FullAdaMatting(
+        input_shape=(img_size, img_size),
         dataset=ds,
         depth=32,
         n_log_images=5,
-        period_test=60*0.2,
-        lr = 0.0001
+        period_test=60*30,
+        learning_rate = 0.0001
     )
+    # network.load("OwnAdaMatting/saves/10-22_12h46/FullAdaMatting")
     network.train()
         
 
