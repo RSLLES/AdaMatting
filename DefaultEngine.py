@@ -12,9 +12,10 @@ class DefaultEngine(Engine):
     def __init__(self, dataset, name, period_test, lr) -> None:
         super().__init__(dataset)
         
-        date = datetime.now().strftime("%m-%d_%Hh%M")
-        self.save_dir = f"OwnAdaMatting/saves/{name}/{date}/"
-        self.log_dir = f"OwnAdaMatting/logs/{name}/{date}/"
+        self.name = f'{name}/{datetime.now().strftime("%m-%d_%Hh%M")}'
+        print(f"Name : {self.name}")
+        self.save_dir = f"OwnAdaMatting/saves/{self.name}"
+        self.log_dir = f"OwnAdaMatting/logs/{self.name}/"
         self.train_writer = tf.summary.create_file_writer(join(self.log_dir, f"train/"))
         self.test_writer = tf.summary.create_file_writer(join(self.log_dir, f"test/"))
         self.period_test = period_test

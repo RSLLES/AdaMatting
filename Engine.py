@@ -1,9 +1,10 @@
 import os
 import io
+import stat
 import tensorflow as tf
 
-import matplotlib
-matplotlib.use('TkAgg')
+# import matplotlib
+# matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
@@ -68,7 +69,7 @@ class Engine:
                         self.reset_testing_log_condition()
                     self.reset_testing_condition()
 
-            self.i +=1
+                self.i +=1
                     
 
 
@@ -100,7 +101,9 @@ class Engine:
             "model",
             "optimizer",
             "train_writer",
-            "test_writer"
+            "test_writer",
+            "save_dir",
+            "log_dir"
         ]
         list_undefined_attributes = [
             attr for attr in list_mandatory_attributes if not hasattr(self, attr)
@@ -120,6 +123,21 @@ class Engine:
                 datetime.now().strftime("%m-%d_%Hh%M") + ".h5"
                 ), save_format="h5"
             )
+
+    def load(self, path_to_weights_folder):
+        def isfile(path):
+            try:
+                st = os.stat(path)
+            except OSError:
+                return False
+            return stat.S_ISREG(st.st_mode)
+        all_weights_files = [f for f in os.listdir(path_to_weights_folder) if isfile(os.path.join(path_to_weights_folder, f))]
+        if len(all_weights_files) == 0:
+            raise ValueError(f"No weights in {path_to_weights_folder}")
+
+        self.model.load_weights(os.path.join(path_to_weights_folder, all_weights_files[-1]))
+
+        
 
     ######################
     ### Logs functions ###
