@@ -188,36 +188,40 @@ class PropagationUnit (Layer):
 
         build_standard_conv = lambda name : Conv2D(self.depth_memory, kernel_size=7, padding="same", use_bias=True, name=name)
         build_standard_bn = lambda name : BatchNormalization(axis=-1, name=name)
-        build_standard_weight = lambda name : self.add_weight(name=name, shape=self.standard_shape, initializer="zeros")
+        build_standard_biais = lambda name : self.add_weight(name=name, shape=self.depth_memory, initializer="zeros")
         build_standard_sigm = lambda name : Activation("sigmoid", name=name)
         
         self.conv_xi = build_standard_conv("conv_xi")
         self.conv_ai = build_standard_conv("conv_ai")
-        self.W_mi = build_standard_weight("w_mi")
+        self.conv_mi = build_standard_conv("conv_mi")
         self.bn_xi = build_standard_bn("bn_xi")
         self.bn_ai = build_standard_bn("bn_ai")
         self.bn_mi = build_standard_bn("bn_mi")
+        self.biais_i = build_standard_biais("biais_i")
         self.sigm_i = build_standard_sigm("sigm_i")
 
         self.conv_xf = build_standard_conv("conv_xf")
         self.conv_af = build_standard_conv("conv_af")
-        self.W_mf = build_standard_weight("w_mf")
+        self.conv_mf = build_standard_conv("conv_mf")
         self.bn_xf = build_standard_bn("bn_xf")
         self.bn_af = build_standard_bn("bn_af")
         self.bn_mf = build_standard_bn("bn_mf")
+        self.biais_f = build_standard_biais("biais_f")
         self.sigm_f = build_standard_sigm("sigm_f")
         
         self.conv_xm = build_standard_conv("conv_xm")
         self.conv_am = build_standard_conv("conv_am")
         self.bn_xm = build_standard_bn("bn_xm")
         self.bn_am = build_standard_bn("bn_am")
+        self.biais_m = build_standard_biais("biais_m")
 
         self.conv_xo = build_standard_conv("conv_xo")
         self.conv_ao = build_standard_conv("conv_ao")
-        self.W_mo = build_standard_weight("w_mo")
+        self.conv_mo = build_standard_conv("conv_mo")
         self.bn_xo = build_standard_bn("bn_xo")
         self.bn_ao = build_standard_bn("bn_ao")
         self.bn_mo = build_standard_bn("bn_mo")
+        self.biais_o = build_standard_biais("biais_o")
         self.sigm_o = build_standard_sigm("sigm_o")
         self.tanh = Activation("tanh", name="tanh")
 
@@ -244,18 +248,18 @@ class PropagationUnit (Layer):
             x = self.preprocess[k](x)
         
         # Input Gate
-        i = self.bn_xi(self.conv_xi(x)) + self.bn_ai(self.conv_ai(alpha)) + self.bn_mi(tf.multiply(self.W_mi, memory))
+        i = self.bn_xi(self.conv_xi(x)) + self.bn_ai(self.conv_ai(alpha)) + self.bn_mi(self.conv_mi(memory)) + self.biais_i
         i = self.sigm_i(i)
 
         # Forget Gate
-        f = self.bn_xf(self.conv_xf(x)) + self.bn_af(self.conv_af(alpha)) + self.bn_mf(tf.multiply(self.W_mf, memory))
+        f = self.bn_xf(self.conv_xf(x)) + self.bn_af(self.conv_af(alpha)) + self.bn_mf(self.conv_mf(memory)) + self.biais_f
         f = self.sigm_f(f)
 
         # Memory update
-        memory = f*memory + i*self.tanh(self.bn_xm(self.conv_xm(x)) + self.bn_am(self.conv_am(alpha)))
+        memory = f*memory + i*self.tanh(self.bn_xm(self.conv_xm(x)) + self.bn_am(self.conv_am(alpha)) + self.biais_m)
 
         # Output gate 
-        o = self.bn_xo(self.conv_xo(x)) + self.bn_ao(self.conv_ao(alpha)) + self.bn_mo(tf.multiply(self.W_mo, memory))
+        o = self.bn_xo(self.conv_xo(x)) + self.bn_ao(self.conv_ao(alpha)) + self.bn_mo(self.conv_mo(memory)) + self.biais_o
         o = self.sigm_o(o)
 
         # Output
