@@ -18,7 +18,7 @@ from dataset import DeepDataset
 ### Parametres ###
 ##################
 
-weights = "10-15_12h15/10-18_09h08.h5"
+weights = "FullAdaMatting/10-22_19h54/10-24_10h34.h5"
 
 path_alphamatting = "/net/homes/r/rseailles/Deep/AlphaMatting_GenTrimap"
 path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/"
@@ -26,14 +26,17 @@ path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/"
 ############
 ### Code ###
 ############
-df = DeepDataset("/net/rnd/DEV/Datasets_DL/alpha_matting/alphamatting_test", img_size=(640,640))
+df = DeepDataset(
+    "/net/rnd/DEV/Datasets_DL/alpha_matting/alphamatting_test", 
+    squared_img_size=224,
+    batch_size=1)
 
 depth=32
-m, _ = get_model(None, depth=depth)
+m, _, _, _ = get_model(depth=depth, input_shape=(224, 224))
 m.load_weights(join(path_weights, weights))
 
 i = 0
-for x, _ in tqdm(df._ds_test):
+for x, _ in tqdm(df.ds_test):
     trimap_adapted , alpha, _ = m(x)
     alpha = tf.squeeze(alpha, axis=0)
     alpha = tf.clip_by_value(alpha, 0.0, 1.0)

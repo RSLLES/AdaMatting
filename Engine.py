@@ -137,6 +137,9 @@ class Engine:
 
         self.model.load_weights(os.path.join(path_to_weights_folder, all_weights_files[-1]))
 
+    def save_model(self, path_to_dir):
+        tf.saved_model.save(self.model, path_to_dir)
+
         
 
     ######################

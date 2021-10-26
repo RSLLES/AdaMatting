@@ -141,7 +141,7 @@ class FullAdaMatting(DefaultEngine):
 
 
 if __name__ == "__main__":
-    size = 7
+    size = 6
     img_size = size*32
     batch_size = 5
     ds = DeepDataset(
