@@ -7,13 +7,10 @@ from dataset import DeepDataset
 from network import get_model
 
 class FullAdaMatting(DefaultEngine):
-    def __init__(self, input_shape, dataset, depth, n_log_images, period_test, learning_rate) -> None:
+    def __init__(self, dataset, depth, n_log_images, period_test, learning_rate) -> None:
         """
         Train the complete version of the AdaMatting network
         Parameters :
-            - input_shape (int, int):
-            Size of the image
-
             - dataset (DeepDataset)
             Dataset to use
 
@@ -38,7 +35,7 @@ class FullAdaMatting(DefaultEngine):
             lr=learning_rate
         )
 
-        self.model, _, _, _ = get_model(depth=depth, input_shape=input_shape)
+        self.model, _, _, _ = get_model(depth=depth)
         self.n_log_images = n_log_images
 
         self.loss_alpha_func = AlphaLoss()
@@ -152,14 +149,13 @@ if __name__ == "__main__":
     )
 
     network = FullAdaMatting(
-        input_shape=(img_size, img_size),
         dataset=ds,
         depth=32,
         n_log_images=5,
         period_test=60*30,
         learning_rate = 0.0001
     )
-    # network.load("OwnAdaMatting/saves/10-22_12h46/FullAdaMatting")
+    network.load("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/FullAdaMatting/10-25_09h47")
     network.train()
         
 

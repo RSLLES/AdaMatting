@@ -177,7 +177,6 @@ class PropagationUnit (Layer):
 
     def build(self, input_shape):
         super(PropagationUnit, self).build(input_shape)
-        self.standard_shape = (input_shape[0][1], input_shape[0][2], self.depth_memory)
 
         self.concat_x = Concatenate(axis=-1)
 
@@ -237,7 +236,9 @@ class PropagationUnit (Layer):
             input_img_and_trimap, trimap, alpha, memory = inputs
         else:
             input_img_and_trimap, trimap, alpha = inputs
-            memory = tf.expand_dims(tf.zeros(shape=self.standard_shape), axis=0)
+            memory = tf.expand_dims(tf.zeros(
+                shape = (tf.shape(alpha)[1], tf.shape(alpha)[2], self.depth_memory)
+                ), axis=0)
 
         # Remove user's trimap
         input_img = tf.slice(input_img_and_trimap, [0,0,0,0],[-1, -1, -1, 3])
@@ -355,13 +356,13 @@ class Weights(Layer):
 ### MODEL GENERATION ###
 ########################
 
-def get_model(depth=32, input_shape=(320, 320)):
+def get_model(depth=32):
     observers = []
 
     ##############
     ### Entree ###
     ##############
-    inputs = Input(shape = (input_shape[0], input_shape[1], 6), name="input")
+    inputs = Input(shape = (None, None, 6), name="input")
     
     ###############
     ### Encoder ###
