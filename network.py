@@ -356,13 +356,13 @@ class Weights(Layer):
 ### MODEL GENERATION ###
 ########################
 
-def get_model(depth=32):
+def get_model(depth=32, input_shape=(None, None)):
     observers = []
 
     ##############
     ### Entree ###
     ##############
-    inputs = Input(shape = (None, None, 6), name="input")
+    inputs = Input(shape = input_shape + (6,), name="input")
     
     ###############
     ### Encoder ###
