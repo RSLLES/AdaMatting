@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 import tensorflow as tf
 from PIL import Image
@@ -16,26 +16,24 @@ import matplotlib.pyplot as plt
 ### Parametres ###
 ##################
 
-weights = "10-15_12h15/10-18_09h08.h5"
-
-path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/"
+path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/FullAdaMatting/10-29_19h05/11-02_11h49.h5"
 path_alphamatting = "/net/homes/r/rseailles/Deep/Alphamatting/"
 
-reduct_factor = 8
+reduct_factor = 4
 
 ############
 ### Code ###
 ############
 
 depth=32
-m, _ = get_model(None, depth=depth)
-m.load_weights(join(path_weights, weights))
+m = get_model(depth=depth)[0]
+m.load_weights(path_weights)
 
 for file in tqdm(listdir(join(path_alphamatting, "images/"))):
     def open_img (folder):
         img = tf.image.convert_image_dtype(tf.image.decode_image(tf.io.read_file(join(path_alphamatting, folder, file))), dtype="float32")
         x,y = int(img.shape[0]/(depth*reduct_factor))*depth, int(img.shape[1]/(depth*reduct_factor))*depth
-        # x,y = 512, 512
+        x,y = 512, 512
         img = tf.image.resize(img, (x, y))
         return img
 
