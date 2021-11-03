@@ -155,7 +155,7 @@ if __name__ == "__main__":
         period_test=60*30,
         learning_rate = 0.0001
     )
-    network.load("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/FullAdaMatting/10-25_09h47")
+    # network.load("/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/FullAdaMatting/10-25_09h47")
     network.train()
         
 
