@@ -3,8 +3,8 @@ import io
 import stat
 import tensorflow as tf
 
-import matplotlib
-matplotlib.use('TkAgg')
+# import matplotlib
+# matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
@@ -140,7 +140,7 @@ class Engine:
     def save_model(self, path_to_dir):
         converter = tf.lite.TFLiteConverter.from_keras_model(self.model)
         tflite_model = converter.convert()
-        with open(os.path.join(path_to_dir, "model.tflite", "wb")) as f:
+        with open(os.path.join(path_to_dir, "model.tflite"), "wb") as f:
             f.write(tflite_model)
         # tf.saved_model.save(self.model, path_to_dir)
 
