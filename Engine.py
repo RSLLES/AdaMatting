@@ -137,14 +137,23 @@ class Engine:
 
         self.model.load_weights(os.path.join(path_to_weights_folder, all_weights_files[-1]))
 
-    def save_model(self, path_to_dir):
+    def get_light_model(self):
         converter = tf.lite.TFLiteConverter.from_keras_model(self.model)
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        model_light = tf.lite.Interpreter(model_content= converter.convert())
+        model_light.allocate_tensors()
+        return model_light
+
+    def save_light_model(self, path_to_dir):
+        converter = tf.lite.TFLiteConverter.from_keras_model(self.model)
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
         tflite_model = converter.convert()
         with open(os.path.join(path_to_dir, "model.tflite"), "wb") as f:
             f.write(tflite_model)
-        # tf.saved_model.save(self.model, path_to_dir)
+        tf.saved_model.save(self.model, path_to_dir)
 
-        
+    def load_light_model(self, path_to_dir):
+        self.model = tf.lite.Interpreter(model_path=os.path.join(path_to_dir, "model.tflite"))
 
     ######################
     ### Logs functions ###
