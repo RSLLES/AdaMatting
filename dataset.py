@@ -223,6 +223,14 @@ class DeepDataset:
         return tf.image.convert_image_dtype(tf.image.decode_png(tf.io.read_file(tf.squeeze(line[type_img]))), dtype="float32")
 
     @tf.function
+    def smoothed_clamp(x, mu, eps = 0.01):
+        if x - mu < - eps:
+            return 0.0
+        if x - mu > eps:
+            return 1.0
+        return (x-mu)/(2*eps) + 0.5
+
+    @tf.function
     def build_gt_trimap(alpha, pre_dilation_strengh=0):
         if pre_dilation_strengh > 0:
             dilated = gen_nn_ops.max_pool_v2(alpha, [1, pre_dilation_strengh, pre_dilation_strengh, 1], [1, 1, 1, 1], "SAME")
@@ -230,9 +238,12 @@ class DeepDataset:
         else:
             dilated = alpha
             eroded = alpha
-        trimap_bg = tf.cast(dilated <= 0.01, dtype="float32")
-        trimap_fg = tf.cast(eroded >= 0.99, dtype="float32")
-        trimap_uk = 1.0 - trimap_bg - trimap_fg + trimap_bg*trimap_fg
+        # trimap_bg = tf.cast(dilated <= 0.01, dtype="float32")
+        trimap_bg = 1.0 - DeepDataset.smoothed_clamp(dilated, 0.01)
+        # trimap_fg = tf.cast(eroded >= 0.94, dtype="float32")
+        trimap_fg = DeepDataset.smoothed_clamp(eroded, 0.94)
+        # trimap_uk = 1.0 - trimap_bg - trimap_fg + trimap_bg*trimap_fg
+        trimap_uk = 1.0 - trimap_bg - trimap_fg
         return tf.concat([trimap_bg, trimap_uk, trimap_fg], axis=-1)
 
     @tf.function
