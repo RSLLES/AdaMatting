@@ -40,6 +40,7 @@ class Engine:
         self.check_if_ready_for_training()
 
         # Boucle
+        self.callback_begin_training()
         while self.main_loop_condition():
             self.epoch += 1
             progress_bar = tqdm(self.ds.ds_train, desc=f"epoch={self.epoch}")
@@ -48,7 +49,9 @@ class Engine:
             for x_batch, y_batch in progress_bar:
 
                 ### Train ###
+                self.callback_before_train_one_batch()
                 self.train_one_batch(x_batch, y_batch)
+                self.callback_after_train_one_batch()
 
                 ### Logging training ###
                 if self.training_log_condition():
@@ -214,7 +217,19 @@ class Engine:
                 if row == 0:
                     axs[0, col].set_title(name)
         return Engine.plot_to_image(fig)
-    
+
+    ##################
+    ### Callcbacks ###
+    ##################
+
+    def callback_begin_training(self):
+        pass
+
+    def callback_before_train_one_batch(self):
+        pass
+
+    def callback_after_train_one_batch(self):
+        pass
 
     ############################################
     ### Methods to overload in child classes ###
