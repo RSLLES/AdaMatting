@@ -5,6 +5,9 @@ from keras.layers import Input, Conv2D, BatchNormalization, Lambda, MaxPooling2D
 from keras.layers.advanced_activations import LeakyReLU, Softmax
 from keras import Model
 from keras.initializers import Constant
+from tensorflow.python.types import internal
+
+# from TensorflowCpp.build.xnnpack.tools.xngen import preprocess
 
 #####################
 ### CUSTOM LAYERS ###
@@ -41,6 +44,9 @@ class ConvBNRelu (Layer):
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], input_shape[1], input_shape[2], self.depth)
+
+    def get_prunable_weights(self):
+        return self.internal[0].trainable_weights
 
 class ResBlock (Layer):
     def __init__(self, depth=None, downsample=False, kernel=3, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
@@ -81,6 +87,9 @@ class ResBlock (Layer):
             z = self.maxpool(z)
         return z
 
+    def get_prunable_weights(self):
+        return self.conv1.get_prunable_weights() + self.conv2.get_prunable_weights() + self.convcut.get_prunable_weights()
+
 class DecoderBlock (Layer):
     def __init__(self, kernel=3, double_reduction=False, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
         self.double_reduction = double_reduction
@@ -107,6 +116,12 @@ class DecoderBlock (Layer):
             z = layer(z)
         return z
 
+    def get_prunable_weights(self):
+        L = []
+        for layer in self.internal:
+            L += layer.get_prunable_weights()
+        return L
+
 class CutBlock (Layer):
     def __init__(self, kernel=3, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
         self.kernel = kernel
@@ -129,6 +144,12 @@ class CutBlock (Layer):
         for layer in self.internal:
             z = layer(z)
         return z
+
+    def get_prunable_weights(self):
+        L = []
+        for layer in self.internal:
+            L += layer.get_prunable_weights()
+        return L
 
 class SubPixelConv (Layer):
     def __init__(self, double_reduction=False, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
@@ -156,6 +177,9 @@ class SubPixelConv (Layer):
         for layer in self.internal:
             z = layer(z)
         return z
+
+    def get_prunable_weights(self):
+        return self.internal[0].trainable_weights
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], input_shape[1]*2, input_shape[2]*2, int(self.depth/4))
@@ -268,6 +292,18 @@ class PropagationUnit (Layer):
 
         return self.concat_end([alpha, memory])
 
+    def get_prunable_weights(self):
+        L = []
+        L += self.preprocess[0].trainable_weights + self.preprocess[1].trainable_weights
+
+        L += self.conv_xi.trainable_weights + self.conv_ai.trainable_weights + self.conv_mi.trainable_weights + [self.biais_i]
+        L += self.conv_xf.trainable_weights + self.conv_af.trainable_weights + self.conv_mf.trainable_weights + [self.biais_f]
+        L += self.conv_xm.trainable_weights + self.conv_am.trainable_weights + [self.biais_m]
+        L += self.conv_xo.trainable_weights + self.conv_ao.trainable_weights + self.conv_mo.trainable_weights + [self.biais_o]
+
+        L+= self.conv_alpha.trainable_weights + self.concat_end.trainable_weights
+        return L
+
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], input_shape[1], input_shape[2], 1 + self.depth_memory)
@@ -350,6 +386,9 @@ class Weights(Layer):
 
     def compute_output_shape(self):
        return self.output_dim
+
+    def get_prunable_weights(self):
+        return []
 
 
 ########################
