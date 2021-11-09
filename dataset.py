@@ -224,11 +224,7 @@ class DeepDataset:
 
     @tf.function
     def smoothed_clamp(x, mu, eps = 0.01):
-        if x - mu < - eps:
-            return 0.0
-        if x - mu > eps:
-            return 1.0
-        return (x-mu)/(2*eps) + 0.5
+        return tf.clip_by_value((x-mu)/(2*eps) + 0.5, 0.0, 1.0)
 
     @tf.function
     def build_gt_trimap(alpha, pre_dilation_strengh=0):
