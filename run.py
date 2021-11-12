@@ -25,9 +25,9 @@ def run(
 
     def extract_trimap(a):
         return tf.concat([
-            tf.cast(a <= 0.01, dtype=tf.float32),
-            tf.cast((a > 0.01) & (a < 0.99), dtype=tf.float32),
-            tf.cast(a >= 0.99, dtype=tf.float32)
+            tf.cast(a <= 0.05, dtype=tf.float32),
+            tf.cast((a > 0.05) & (a < 0.95), dtype=tf.float32),
+            tf.cast(a >= 0.95, dtype=tf.float32)
         ], axis=-1)
 
     tri = extract_trimap(tri)
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         exit()
 
     depth=32
-    path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/FullAdaMatting/10-29_19h05/11-04_17h46.h5"
+    path_weights = "/net/homes/r/rseailles/Deep/OwnAdaMatting/saves/FullAdaMatting/10-29_19h05/11-08_11h41.h5"
     model = get_model(depth=depth)[0]
     model.load_weights(path_weights)
     run(
